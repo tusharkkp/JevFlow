@@ -13,6 +13,7 @@ from backend.app.cache.memory_cache import MemoryCache
 from backend.app.rate_limiter.token_bucket import TokenBucketRateLimiter
 from backend.app.db.session import init_db
 from backend.app.telemetry.repository import TelemetryRepository
+from backend.app.experiments.runner import BenchmarkRunner
 
 
 @asynccontextmanager
@@ -24,8 +25,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="0.7.0",
-    description="Adaptive AI Gateway powered by System One Probabilistic Decisions, Deterministic Policy, and Telemetry.",
+    version="0.8.0",
+    description="Adaptive AI Gateway powered by System One Probabilistic Decisions, Deterministic Policy, Telemetry, and Evaluation Benchmarks.",
     docs_url="/docs",
     openapi_url="/openapi.json",
     lifespan=lifespan,
@@ -138,6 +139,43 @@ async def get_telemetry_request_detail(request_id: str):
     if not trace:
         raise HTTPException(status_code=404, detail=f"Request trace '{request_id}' not found.")
     return trace
+
+
+# ----------------------------------------------------------------------
+# Evaluation & Benchmark Endpoints
+# ----------------------------------------------------------------------
+benchmark_runner = BenchmarkRunner()
+
+
+@app.post("/v1/experiments/run", tags=["Experiments"])
+async def run_experiment_benchmark(
+    strategy: str = Query("all", description="Routing strategy: 'baseline', 'rules', 'jevflow', or 'all'")
+):
+    """
+    Execute comparative benchmark evaluation across the curated multi-archetype test dataset.
+    Compares Baseline (100% Frontier), Rule-based, and JevFlow Adaptive Routing.
+    """
+    strategy = strategy.lower().strip()
+    if strategy not in ("baseline", "rules", "jevflow", "all"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid strategy. Allowed options: 'baseline', 'rules', 'jevflow', 'all'."
+        )
+
+    if strategy == "all":
+        return await benchmark_runner.run_all()
+    else:
+        return await benchmark_runner.run_strategy(strategy)
+
+
+@app.get("/v1/experiments", tags=["Experiments"])
+async def list_experiment_runs(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """Retrieve historical comparative benchmark runs from the database."""
+    return await telemetry_repo.list_experiments(limit=limit, offset=offset)
+
 
 
 @app.post(

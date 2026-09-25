@@ -4,7 +4,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.db.session import async_session_factory
-from backend.app.db.models import RequestRecord
+from backend.app.db.models import RequestRecord, ExperimentRecord
 from backend.app.schemas.response import TelemetryTrace
 from backend.app.telemetry.metrics import compute_telemetry_aggregations
 
@@ -12,7 +12,7 @@ logger = logging.getLogger("jevflow.telemetry_repo")
 
 
 class TelemetryRepository:
-    """Repository handling database persistence and aggregation queries for telemetry traces."""
+    """Repository handling database persistence and aggregation queries for telemetry traces and experiments."""
 
     async def save_trace(self, trace: TelemetryTrace) -> None:
         """Persist a single telemetry trace asynchronously."""
@@ -138,3 +138,31 @@ class TelemetryRepository:
             result = await session.execute(stmt)
             records = result.scalars().all()
             return compute_telemetry_aggregations(records)
+
+    async def list_experiments(self, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
+        """List benchmark experiment runs ordered by most recent."""
+        async with async_session_factory() as session:
+            stmt = select(ExperimentRecord).order_by(desc(ExperimentRecord.created_at)).limit(limit).offset(offset)
+            result = await session.execute(stmt)
+            records = result.scalars().all()
+            return [
+                {
+                    "experiment_id": r.experiment_id,
+                    "name": r.name,
+                    "strategy": r.strategy,
+                    "created_at": r.created_at.isoformat(),
+                    "total_requests": r.total_requests,
+                    "p50_latency_ms": r.p50_latency_ms,
+                    "p95_latency_ms": r.p95_latency_ms,
+                    "p99_latency_ms": r.p99_latency_ms,
+                    "average_latency_ms": r.average_latency_ms,
+                    "total_cost_usd": r.total_cost_usd,
+                    "cost_saved_usd": r.cost_saved_usd,
+                    "average_cost_per_request": r.average_cost_per_request,
+                    "success_rate": r.success_rate,
+                    "fallback_rate": r.fallback_rate,
+                    "cache_hit_rate": r.cache_hit_rate,
+                }
+                for r in records
+            ]
+
