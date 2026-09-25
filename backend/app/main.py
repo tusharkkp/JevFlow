@@ -5,10 +5,11 @@ from backend.app.core.config import settings
 from backend.app.schemas.request import GatewayRequest
 from backend.app.schemas.response import GatewayResponse
 from backend.app.services.gateway_service import GatewayService
+from backend.app.decision.jev_engine import TypeSafeJevEngine
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="0.1.0",
+    version="0.2.0",
     description="Adaptive AI Gateway powered by System One Probabilistic Decisions and Deterministic Policy.",
     docs_url="/docs",
     openapi_url="/openapi.json",
@@ -25,7 +26,8 @@ app.add_middleware(
 
 # Dependency Injection for GatewayService
 def get_gateway_service() -> GatewayService:
-    return GatewayService()
+    decision_engine = TypeSafeJevEngine()
+    return GatewayService(decision_engine=decision_engine)
 
 
 @app.get("/", tags=["Root"])

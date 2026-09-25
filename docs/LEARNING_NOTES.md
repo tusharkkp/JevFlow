@@ -34,3 +34,25 @@
 - **What I learned:** Keeping the policy engine purely functional (input `DecisionResult` + constraints $\rightarrow$ output `ExecutionPlan`) makes testing edge cases like low-confidence escalation and latency budget clamping trivial and deterministic.
 - **What could fail:** In-memory mock providers cannot reveal network jitter, partial response timeouts, or HTTP 422 schema validation mismatches that real APIs will exhibit in Phase 2.
 
+---
+
+## Entry 2: Phase 2 — Real TypeSafe Jev Integration & Multi-Question Schema Transformation
+
+- **Concept:** Multi-Question System One API integration (`POST /v1/systemone`) and resilient fault-tolerant client design.
+- **Why it exists:** To replace or wrap our mock decision engine with the live TypeSafe Jev System One service. Rather than treating an AI model as an open-ended conversational bot, Jev is used as a fast, typed probabilistic classifier that answers multiple orthogonal questions about a shared `state` simultaneously.
+- **How we implemented it:**
+  - *Client (`backend/app/jev/client.py`):* Built `TypeSafeJevClient` utilizing asynchronous HTTP (`httpx`) adhering to the official OpenAPI 3.1 specification. Implemented typed exceptions (`TypeSafeAuthError`, `TypeSafeValidationError`, `TypeSafeTimeoutError`, `TypeSafeAPIError`) with custom HTTP client injection for testing.
+  - *Multi-Question Query Construction (`backend/app/decision/jev_engine.py`):* Formulated 4 simultaneous questions in a single request:
+    1. `intent` (`choice`): Categorizes into 6 discrete buckets with human-interpretable criteria descriptions.
+    2. `complexity` (`score`): Evaluates on a 3-level rubric (Simple, Moderate, Complex), returning an expected score between 0.0 and 2.0.
+    3. `safety` (`noul`): Binary probability of safety ($0.0 \dots 1.0$).
+    4. `execution_route` (`choice`): Recommended execution tier.
+  - *Graceful Degradation:* Wrapped network execution with try/except blocks. If `TYPESAFE_API_KEY` is not present, or if Jev times out ($>1500\text{ms}$) or returns 5xx, the engine automatically falls back to `MockDecisionEngine` and records the fallback cause in telemetry without dropping the user's request.
+- **Alternative approaches:**
+  - *Sequential Single-Question Calls:* Sending four individual HTTP requests for intent, complexity, safety, and route. (Trade-off: Would multiply network latency by 4x. Sending a single multi-question payload evaluates all 4 concurrently on the TypeSafe cluster in one round-trip).
+  - *Crash on Missing API Key:* Halting the server if `TYPESAFE_API_KEY` is not set. (Trade-off: Prevents offline development, CI/CD testing, and causes total gateway downtime during third-party API outages).
+- **Trade-offs:** Combining 4 questions into one payload makes the request JSON larger (~1.2 KB), but this is negligible compared to the massive latency reduction of a single round-trip.
+- **What I learned:** Jev's `ScoreQuestion` returns an expected value as a continuous float (e.g. 1.65) calculated as a probability-weighted average across rubric levels. This allows our policy engine to evaluate fine-grained thresholds (e.g., $score > 1.4$) rather than coarse discrete buckets.
+- **What could fail:** If TypeSafe updates rubric criteria or return structures in a future API version, Pydantic schema validation would catch the deviation, triggering our fallback engine safely.
+
+

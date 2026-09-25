@@ -1,4 +1,5 @@
 import time
+import asyncio
 from backend.app.decision.base import DecisionEngine
 from backend.app.schemas.decision import (
     DecisionResult,
@@ -21,6 +22,8 @@ class MockDecisionEngine(DecisionEngine):
 
     async def evaluate(self, prompt: str) -> DecisionResult:
         start_time = time.perf_counter()
+        if self.simulated_latency_ms > 0:
+            await asyncio.sleep(self.simulated_latency_ms / 1000.0)
         lowered = prompt.lower().strip()
 
         # 1. Safety check simulation
@@ -75,7 +78,7 @@ class MockDecisionEngine(DecisionEngine):
             recommended_route = RouteRecommendation.SMALL_MODEL
             confidence = 0.84
 
-        elapsed_ms = (time.perf_counter() - start_time) * 1000.0 + self.simulated_latency_ms
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
         return DecisionResult(
             intent=intent,

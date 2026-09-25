@@ -1,4 +1,5 @@
 import time
+import asyncio
 from typing import Dict, Any
 from backend.app.providers.base import ModelProvider, ProviderResponse
 from backend.app.schemas.response import RouteType
@@ -79,7 +80,9 @@ class MockModelProvider(ModelProvider):
 
         # Baseline cost (what it would have cost on the Frontier model)
         simulated_delay = self.simulated_delays_ms.get(route, 10.0)
-        elapsed_ms = (time.perf_counter() - start_time) * 1000.0 + simulated_delay
+        if simulated_delay > 0:
+            await asyncio.sleep(simulated_delay / 1000.0)
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
         return ProviderResponse(
             content=content,
