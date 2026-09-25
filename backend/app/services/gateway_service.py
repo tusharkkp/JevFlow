@@ -14,6 +14,7 @@ from backend.app.providers.registry import ProviderRegistry
 from backend.app.cache.base import BaseCache
 from backend.app.cache.memory_cache import MemoryCache
 from backend.app.cache.key_generator import generate_cache_key
+from backend.app.telemetry.repository import TelemetryRepository
 
 
 class GatewayService:
@@ -21,7 +22,7 @@ class GatewayService:
     Central Orchestrator for JevFlow.
     
     Coordinates the pipeline:
-    Client Request -> Cache Check -> System One Decision -> Adaptive Policy -> Provider -> Cache Store -> Telemetry
+    Client Request -> Cache Check -> System One Decision -> Adaptive Policy -> Provider -> Cache Store -> Telemetry Persistence
     """
 
     def __init__(
@@ -30,11 +31,13 @@ class GatewayService:
         policy_engine: Optional[PolicyEngine] = None,
         provider_registry: Optional[ProviderRegistry] = None,
         cache: Optional[BaseCache] = None,
+        telemetry_repo: Optional[TelemetryRepository] = None,
     ):
         self.decision_engine = decision_engine or TypeSafeJevEngine()
         self.policy_engine = policy_engine or PolicyEngine()
         self.registry = provider_registry or ProviderRegistry()
         self.cache = cache or MemoryCache()
+        self.telemetry_repo = telemetry_repo or TelemetryRepository()
         self._active_requests: int = 0
         self._lock = asyncio.Lock()
 
@@ -211,6 +214,12 @@ class GatewayService:
             baseline_cost_usd=baseline_cost_usd,
             cost_saved_usd=round(cost_saved_usd, 7),
         )
+
+        # ----------------------------------------------------------------------
+        # 5. Telemetry Persistence
+        # ----------------------------------------------------------------------
+        if self.telemetry_repo:
+            await self.telemetry_repo.save_trace(telemetry)
 
         return GatewayResponse(
             request_id=request_id,

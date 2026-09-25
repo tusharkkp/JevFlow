@@ -1,4 +1,6 @@
-from fastapi import FastAPI, Depends, Request, HTTPException, status
+from contextlib import asynccontextmanager
+from typing import Optional
+from fastapi import FastAPI, Depends, Request, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.core.config import settings
@@ -9,13 +11,24 @@ from backend.app.decision.jev_engine import TypeSafeJevEngine
 from backend.app.providers.registry import ProviderRegistry
 from backend.app.cache.memory_cache import MemoryCache
 from backend.app.rate_limiter.token_bucket import TokenBucketRateLimiter
+from backend.app.db.session import init_db
+from backend.app.telemetry.repository import TelemetryRepository
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize database tables on startup
+    await init_db()
+    yield
+
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="0.6.0",
-    description="Adaptive AI Gateway powered by System One Probabilistic Decisions and Deterministic Policy.",
+    version="0.7.0",
+    description="Adaptive AI Gateway powered by System One Probabilistic Decisions, Deterministic Policy, and Telemetry.",
     docs_url="/docs",
     openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
 # Enable CORS
@@ -30,10 +43,8 @@ app.add_middleware(
 # Shared singletons
 provider_registry = ProviderRegistry()
 gateway_cache = MemoryCache(max_entries=5000)
-rate_limiter = TokenBucketRateLimiter(
-    requests_per_minute=60,
-    burst_capacity=10,
-)
+rate_limiter = TokenBucketRateLimiter(requests_per_minute=60, burst_capacity=10)
+telemetry_repo = TelemetryRepository()
 
 
 def get_gateway_service() -> GatewayService:
@@ -42,6 +53,7 @@ def get_gateway_service() -> GatewayService:
         decision_engine=decision_engine,
         provider_registry=provider_registry,
         cache=gateway_cache,
+        telemetry_repo=telemetry_repo,
     )
 
 
@@ -59,7 +71,7 @@ async def enforce_rate_limit(client_id: str):
 async def root():
     return {
         "service": settings.APP_NAME,
-        "version": "0.6.0",
+        "version": "0.7.0",
         "status": "operational",
         "docs": "/docs",
     }
@@ -98,6 +110,34 @@ async def cache_clear():
 @app.get("/v1/rate-limit/stats", tags=["Rate Limiting"])
 async def rate_limit_stats():
     return await rate_limiter.get_stats()
+
+
+# ----------------------------------------------------------------------
+# Telemetry & Observability Endpoints
+# ----------------------------------------------------------------------
+@app.get("/v1/telemetry/summary", tags=["Telemetry"])
+async def get_telemetry_summary():
+    """Retrieve aggregate telemetry metrics (P50/P95/P99 latency, cost savings, route distributions)."""
+    return await telemetry_repo.get_summary_metrics()
+
+
+@app.get("/v1/telemetry/requests", tags=["Telemetry"])
+async def list_telemetry_requests(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    route: Optional[str] = Query(None, description="Filter by route: deterministic, small_model, frontier_model, cache, etc."),
+):
+    """List recent persistent request traces with pagination."""
+    return await telemetry_repo.list_traces(limit=limit, offset=offset, route=route)
+
+
+@app.get("/v1/telemetry/requests/{request_id}", tags=["Telemetry"])
+async def get_telemetry_request_detail(request_id: str):
+    """Retrieve detailed waterfall latency breakdown and economics for a specific request."""
+    trace = await telemetry_repo.get_trace(request_id)
+    if not trace:
+        raise HTTPException(status_code=404, detail=f"Request trace '{request_id}' not found.")
+    return trace
 
 
 @app.post(

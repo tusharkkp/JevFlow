@@ -140,6 +140,32 @@
 - **What I learned:** Decoupling cache lookup before the decision layer yields the ultimate latency optimization: P50 latency drops from 40ms to 0.5ms for repeated queries.
 - **What could fail:** Memory exhaustion if cache capacity is unbounded. Prevented by strict max entry limits (5,000 entries) with LRU eviction.
 
+---
+
+## Entry 7: Phase 7 — Observability: Persistent Telemetry, Latency Percentiles (P50/P95/P99) & Trace Explorer
+
+- **Concept:** Long-term Telemetry Persistence, Distributed Tracing Waterfalls, and Statistical Percentile Accounting (P50, P95, P99).
+- **Why it exists:** In-memory metrics vanish on process restart. To prove the engineering value of System One routing, the gateway must persist structured telemetry across thousands of requests to answer:
+  1. *"What is our P95 and P99 latency compared to sending all queries to Frontier?"*
+  2. *"How many total dollars did JevFlow save this week?"*
+  3. *"What percentage of requests were routed to deterministic rules vs small models vs frontier models?"*
+- **Privacy Guarantee:** In accordance with Section 16, user prompt text is **never stored** in the telemetry database. Only classification metadata, token counts, latencies, and routing paths are persisted.
+- **How we implemented it:**
+  - *Database Layer (`backend/app/db`):* Built asynchronous SQLAlchemy models (`RequestRecord`, `ExperimentRecord`). Uses PostgreSQL in production with automatic fallback to async SQLite for local testing.
+  - *Metrics Engine (`backend/app/telemetry/metrics.py`):* Implemented linear interpolation percentile algorithms for P50, P95, and P99 latencies across total time, Jev decision time, model execution, and pure gateway overhead. Computed cumulative cost savings and route percentage distributions.
+  - *Telemetry Repository (`backend/app/telemetry/repository.py`):* Handled async persistence and pagination queries.
+  - *Trace API Endpoints (`backend/app/main.py`):*
+    - `GET /v1/telemetry/summary`: Returns system-wide P50/P95/P99 latencies, cost savings %, fallback rates, and route breakdown.
+    - `GET /v1/telemetry/requests`: Lists historical traces with route filtering and pagination.
+    - `GET /v1/telemetry/requests/{request_id}`: Returns single-request waterfall latency breakdowns and token economics.
+- **Alternative approaches:**
+  - *Averages (Mean Latency):* (Trade-off: Averages conceal long-tail outliers; a 90ms average can hide a 2500ms P99 spike. Computing P95 and P99 is mandatory).
+  - *Third-party SaaS (Datadog/NewRelic):* (Trade-off: Excellent for APM, but lacks gateway-native counter-factual cost savings calculation).
+- **Trade-offs:** Storing every trace creates database write I/O. We optimized this by indexing primary lookups (`timestamp`, `selected_route`, `request_id`) and running writes asynchronously.
+- **What I learned:** Isolating the waterfall breakdown (`jev_decision_ms`, `model_execution_ms`, `gateway_overhead_ms`) enables instant diagnosis of whether a latency spike was caused by the decision layer, the model provider, or internal gateway serialization.
+- **What could fail:** Database connection drops during spikes. Handled with connection pooling and async rollback blocks.
+
+
 
 
 
