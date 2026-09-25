@@ -14,7 +14,7 @@ def test_gateway_routes_simple_greeting_deterministically(client: TestClient):
     assert response.status_code == 200
     data = response.json()
     assert data["route"] == "deterministic"
-    assert data["model"] == "rule-engine-v1"
+    assert data["model"] == "deterministic-rule-v1"
     assert "telemetry" in data
     assert data["telemetry"]["intent"] == "factual_question"
     assert data["telemetry"]["cost_saved_usd"] >= 0.0
@@ -26,7 +26,7 @@ def test_gateway_routes_complex_reasoning_to_frontier(client: TestClient):
     assert response.status_code == 200
     data = response.json()
     assert data["route"] == "frontier_model"
-    assert data["model"] == "mock-frontier-large-v1"
+    assert data["model"] == "frontier-reasoning-v1"
     assert data["telemetry"]["intent"] == "reasoning"
     assert data["telemetry"]["complexity_score"] >= 1.5
 

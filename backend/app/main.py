@@ -6,10 +6,11 @@ from backend.app.schemas.request import GatewayRequest
 from backend.app.schemas.response import GatewayResponse
 from backend.app.services.gateway_service import GatewayService
 from backend.app.decision.jev_engine import TypeSafeJevEngine
+from backend.app.providers.registry import ProviderRegistry
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="0.2.0",
+    version="0.3.0",
     description="Adaptive AI Gateway powered by System One Probabilistic Decisions and Deterministic Policy.",
     docs_url="/docs",
     openapi_url="/openapi.json",
@@ -24,17 +25,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Dependency Injection for GatewayService
+# Singleton registry and dependency injection
+provider_registry = ProviderRegistry()
+
+
 def get_gateway_service() -> GatewayService:
     decision_engine = TypeSafeJevEngine()
-    return GatewayService(decision_engine=decision_engine)
+    return GatewayService(decision_engine=decision_engine, provider_registry=provider_registry)
 
 
 @app.get("/", tags=["Root"])
 async def root():
     return {
         "service": settings.APP_NAME,
-        "version": "0.1.0",
+        "version": "0.3.0",
         "status": "operational",
         "docs": "/docs",
     }
@@ -42,10 +46,18 @@ async def root():
 
 @app.get("/health", tags=["System"])
 async def health():
+    provider_health = await provider_registry.check_all_health()
     return {
         "status": "healthy",
         "environment": settings.ENVIRONMENT,
+        "providers": {k: v.model_dump() for k, v in provider_health.items()},
     }
+
+
+@app.get("/v1/providers", tags=["Providers"])
+async def list_providers():
+    """List registered execution providers, cost rates, and expected latencies."""
+    return provider_registry.get_all_metadata()
 
 
 @app.post(
@@ -55,7 +67,7 @@ async def health():
     tags=["Gateway"],
     summary="Process prompt through Adaptive AI Gateway",
     description=(
-        "Evaluates the prompt via System One decision layer, applies deterministic policy, "
+        "Evaluates prompt via System One decision layer, applies deterministic policy, "
         "routes to the optimal execution provider, and emits complete telemetry."
     )
 )

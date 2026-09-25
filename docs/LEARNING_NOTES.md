@@ -55,4 +55,27 @@
 - **What I learned:** Jev's `ScoreQuestion` returns an expected value as a continuous float (e.g. 1.65) calculated as a probability-weighted average across rubric levels. This allows our policy engine to evaluate fine-grained thresholds (e.g., $score > 1.4$) rather than coarse discrete buckets.
 - **What could fail:** If TypeSafe updates rubric criteria or return structures in a future API version, Pydantic schema validation would catch the deviation, triggering our fallback engine safely.
 
+---
+
+## Entry 3: Phase 3 — Real Model Providers, Vendor Abstraction & Automatic Failover
+
+- **Concept:** The Strategy Pattern for Multi-Tier Model Providers and Counter-Factual Cost Accounting.
+- **Why it exists:** GenAI gateways should never be locked into a single model vendor (e.g., OpenAI, Anthropic, or local open-weights). Furthermore, to prove that System One routing saves money, the gateway must accurately compute token economics ($ per 1M tokens) and track the difference between what a request actually cost vs. what it would have cost on an expensive frontier model.
+- **How we implemented it:**
+  - *Unified Interface (`backend/app/providers/base.py`):* Defined `ModelProvider` declaring `generate()`, `estimate_cost()`, `health()`, and `metadata`.
+  - *Provider Implementations:*
+    1. `DeterministicProvider`: Sub-millisecond rule matching for greetings and static facts ($0.00 cost).
+    2. `SmallModelProvider`: Cost-efficient fast model ($0.25 input / $1.25 output per 1M tokens).
+    3. `FrontierModelProvider`: Deep reasoning model ($3.00 input / $15.00 output per 1M tokens).
+    4. `HumanReviewProvider`: Quarantine queue for safety-flagged prompts ($0.00 cost).
+  - *Registry & Failover Router (`backend/app/providers/registry.py`):* Manages provider lifecycle and automatic failover chains (if Frontier fails, failover to Small Model; if Small Model fails, failover to Deterministic).
+  - *Counter-Factual Cost Delta:* `GatewayService` calculates `baseline_cost_usd` against Frontier pricing and records `cost_saved_usd` on every request.
+- **Alternative approaches:**
+  - *Ad-Hoc Provider Calls:* Writing inline `if-else` blocks calling vendor APIs directly in the route handler. (Trade-off: High technical debt, impossible to mock cleanly, and fragile failover).
+  - *Unified Proxy Services (e.g. LiteLLM):* Using an external multi-vendor proxy. (Trade-off: Useful for pure API translation, but lacks the deep integration with System One decisions, policy engines, and counter-factual savings metrics).
+- **Trade-offs:** Abstracting multiple providers requires normalizing token usage and generation content into a common `ProviderResponse`. Provider-specific features (e.g. multimodal inputs) must be handled by provider adapters.
+- **What I learned:** By instrumenting counter-factual accounting on every single request, the gateway produces verifiable empirical proof of dollar savings without needing offline estimates.
+- **What could fail:** Upstream vendor rate-limits (HTTP 429) or transient outages. Handled by the Provider Registry's automatic failover chain.
+
+
 

@@ -6,10 +6,9 @@ from typing import Optional
 from backend.app.schemas.request import GatewayRequest
 from backend.app.schemas.response import GatewayResponse, TelemetryTrace, RouteType
 from backend.app.decision.base import DecisionEngine
-from backend.app.decision.mock_engine import MockDecisionEngine
+from backend.app.decision.jev_engine import TypeSafeJevEngine
 from backend.app.policy.engine import PolicyEngine
-from backend.app.providers.base import ModelProvider
-from backend.app.providers.mock_provider import MockModelProvider
+from backend.app.providers.registry import ProviderRegistry
 
 
 class GatewayService:
@@ -24,11 +23,11 @@ class GatewayService:
         self,
         decision_engine: Optional[DecisionEngine] = None,
         policy_engine: Optional[PolicyEngine] = None,
-        provider: Optional[ModelProvider] = None,
+        provider_registry: Optional[ProviderRegistry] = None,
     ):
-        self.decision_engine = decision_engine or MockDecisionEngine()
+        self.decision_engine = decision_engine or TypeSafeJevEngine()
         self.policy_engine = policy_engine or PolicyEngine()
-        self.provider = provider or MockModelProvider()
+        self.registry = provider_registry or ProviderRegistry()
 
     async def process_request(self, request: GatewayRequest) -> GatewayResponse:
         start_overall = time.perf_counter()
@@ -45,10 +44,10 @@ class GatewayService:
             cost_budget=request.cost_budget,
         )
 
-        # 3. Model Provider Execution
-        provider_resp = await self.provider.generate(
-            prompt=request.prompt,
+        # 3. Model Provider Execution via Registry (with automatic failover)
+        provider_resp, exec_fallback, exec_reason = await self.registry.execute_route(
             route=plan.selected_route,
+            prompt=request.prompt,
         )
 
         # 4. Latency & Cost Telemetry Accounting
@@ -62,12 +61,15 @@ class GatewayService:
         )
 
         # Baseline cost calculation: What would this exact request have cost if routed to Frontier?
-        baseline_cost_usd = self.provider.estimate_cost(
+        baseline_cost_usd = self.registry.frontier_model.estimate_cost(
             input_tokens=provider_resp.input_tokens,
             output_tokens=provider_resp.output_tokens,
-            route=RouteType.FRONTIER_MODEL,
         )
         cost_saved_usd = max(0.0, baseline_cost_usd - provider_resp.cost_usd)
+
+        # Consolidate fallback signals (from policy or execution failover)
+        fallback_triggered = plan.fallback_triggered or exec_fallback
+        fallback_reason = exec_reason or plan.fallback_reason
 
         telemetry = TelemetryTrace(
             request_id=request_id,
@@ -79,8 +81,8 @@ class GatewayService:
             policy_reason=plan.policy_reason,
             actual_model=provider_resp.model_name,
             cache_hit=False,
-            fallback_triggered=plan.fallback_triggered,
-            fallback_reason=plan.fallback_reason,
+            fallback_triggered=fallback_triggered,
+            fallback_reason=fallback_reason,
             jev_latency_ms=round(decision.decision_latency_ms, 2),
             model_latency_ms=round(provider_resp.latency_ms, 2),
             gateway_overhead_ms=round(gateway_overhead_ms, 2),
