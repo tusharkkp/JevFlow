@@ -56,7 +56,7 @@ async def test_human_review_provider():
 @pytest.mark.asyncio
 async def test_provider_registry_routing():
     registry = ProviderRegistry()
-    resp, fallback, reason = await registry.execute_route(RouteType.SMALL_MODEL, "test prompt")
+    resp, fallback, reason, retries, cb_tripped, err_cat = await registry.execute_route(RouteType.SMALL_MODEL, "test prompt")
     assert resp.model_name == "small-fast-v1"
     assert not fallback
     assert reason is None
@@ -83,7 +83,7 @@ async def test_provider_registry_failover_on_error():
     registry = ProviderRegistry(frontier_model_provider=failing_frontier)
 
     # When FRONTIER_MODEL fails, it should failover to small_model
-    resp, fallback, reason = await registry.execute_route(RouteType.FRONTIER_MODEL, "Solve complex logic")
+    resp, fallback, reason, retries, cb_tripped, err_cat = await registry.execute_route(RouteType.FRONTIER_MODEL, "Solve complex logic")
     assert fallback is True
     assert "provider_failure" in reason
     assert resp.model_name == "small-fast-v1"

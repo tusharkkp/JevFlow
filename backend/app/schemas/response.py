@@ -24,12 +24,21 @@ class TelemetryTrace(BaseModel):
     policy_reason: str
     actual_model: str
     cache_hit: bool = False
+    
+    # Reliability & Fault Tolerance tracking
     fallback_triggered: bool = False
     fallback_reason: Optional[str] = None
+    retries_attempted: int = 0
+    circuit_breaker_tripped: bool = False
+    error_category: Optional[str] = None  # 'timeout', 'provider_error', 'jev_error', 'policy_rejection', etc.
+
+    # Latency tracking
     jev_latency_ms: float
     model_latency_ms: float
     gateway_overhead_ms: float
     total_latency_ms: float
+
+    # Economics & Accounting
     input_tokens: int
     output_tokens: int
     estimated_cost_usd: float

@@ -101,6 +101,25 @@
 - **What I learned:** P95 latency margins (accounting for $2.2\times$ network variance) must be used instead of optimistic P50 averages when evaluating latency budgets, otherwise jitter will violate client SLAs.
 - **What could fail:** Sudden unmetered traffic surges. Handled by gateway rate limiting and Redis token buckets (Phase 6).
 
+---
+
+## Entry 5: Phase 5 — Reliability Engineering: Circuit Breakers, Retries & Failure Telemetry
+
+- **Concept:** The Circuit Breaker State Machine (`CLOSED` $\rightarrow$ `OPEN` $\rightarrow$ `HALF-OPEN`), Exponential Backoff with Jitter, and Explicit Failure Accounting.
+- **Why it exists:** Upstream AI APIs (Jev, frontier LLMs) will inevitably experience network drops, rate limits, or transient 5xx errors. If an application keeps firing requests into a failing service, requests pile up, connections exhaust, and the gateway suffers catastrophic cascade failure. A circuit breaker protects downstream services by failing fast without making network calls once an outage is detected.
+- **How we implemented it:**
+  - *Circuit Breaker (`backend/app/reliability/circuit_breaker.py`):* Implemented a stateful circuit breaker. If consecutive failures exceed threshold ($N=2$ or $3$), the breaker trips to `OPEN`. While `OPEN`, calls immediately throw `CircuitBreakerOpenException` in $<0.1\text{ms}$ without making network calls. After `recovery_timeout_sec`, it transitions to `HALF_OPEN` to test recovery with a single probe request.
+  - *Exponential Backoff with Jitter (`backend/app/reliability/retry.py`):* Wrapped provider calls with retry logic ($delay = base \times 2^{attempt} + \text{jitter}$). Jitter (20% random spread) prevents the "thundering herd" problem where multiple clients retry at the exact same millisecond.
+  - *Protected Components:* Wired circuit breakers into `TypeSafeJevEngine` and each tier of `ProviderRegistry`.
+  - *Explicit Telemetry:* Stamped each request trace with `retries_attempted`, `circuit_breaker_tripped`, and `error_category` (`timeout`, `circuit_breaker_open`, `provider_error`, `policy_rejection`).
+- **Alternative approaches:**
+  - *Infinite Retries:* Retrying until success. (Trade-off: Exhausts connection pools, multiplies costs, and locks user requests).
+  - *Hidden Errors:* Silently returning an empty string or generic answer without tracking. (Trade-off: Destroys observability; engineers cannot diagnose why a fallback occurred).
+- **Trade-offs:** Retries add latency when transient errors occur, but save the request from failing. Fast-failing in the `OPEN` state drops latency from $1500\text{ms}$ (timeout) to $0.1\text{ms}$ (instant heuristic fallback).
+- **What I learned:** During a complete upstream provider outage, fail-fast circuit breaking allows JevFlow to maintain 100% availability for end users by routing immediately to local small models or deterministic logic without waiting for network timeouts.
+- **What could fail:** If all providers (Frontier, Small, Deterministic) fail concurrently, the gateway must return a graceful degraded 503 rather than an unhandled crash.
+
+
 
 
 

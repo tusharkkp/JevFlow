@@ -6,16 +6,15 @@ from backend.app.providers.deterministic_provider import DeterministicProvider
 from backend.app.providers.small_model_provider import SmallModelProvider
 from backend.app.providers.frontier_model_provider import FrontierModelProvider
 from backend.app.providers.human_review_provider import HumanReviewProvider
+from backend.app.reliability.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
+from backend.app.reliability.retry import retry_with_backoff
 
 logger = logging.getLogger("jevflow.provider_registry")
 
 
 class ProviderRegistry:
     """
-    Registry and Execution Router for Model Providers.
-    
-    Decouples the gateway from any single vendor, handles route-to-provider
-    dispatch, and manages automatic failover chains.
+    Registry and Execution Router for Model Providers with Circuit Breakers and Retries.
     """
 
     def __init__(
@@ -40,6 +39,14 @@ class ProviderRegistry:
             RouteType.CACHE: self.deterministic,
         }
 
+        # Circuit breakers per execution tier
+        self.circuit_breakers: Dict[RouteType, CircuitBreaker] = {
+            RouteType.FRONTIER_MODEL: CircuitBreaker("provider_frontier", failure_threshold=2, recovery_timeout_sec=5.0),
+            RouteType.SMALL_MODEL: CircuitBreaker("provider_small", failure_threshold=3, recovery_timeout_sec=5.0),
+            RouteType.DETERMINISTIC: CircuitBreaker("provider_deterministic", failure_threshold=5, recovery_timeout_sec=5.0),
+            RouteType.HUMAN_REVIEW: CircuitBreaker("provider_review", failure_threshold=5, recovery_timeout_sec=5.0),
+        }
+
     def get_provider(self, route: RouteType) -> ModelProvider:
         """Retrieve the primary provider assigned to an execution route."""
         return self._routes.get(route, self.small_model)
@@ -48,34 +55,53 @@ class ProviderRegistry:
         self,
         route: RouteType,
         prompt: str,
-    ) -> Tuple[ProviderResponse, bool, Optional[str]]:
+    ) -> Tuple[ProviderResponse, bool, Optional[str], int, bool, Optional[str]]:
         """
-        Execute generation against the primary provider with automatic failover.
+        Execute generation against the primary provider with Circuit Breakers, Retries, and Failover.
         
         Returns:
-            Tuple of (ProviderResponse, fallback_triggered: bool, fallback_reason: Optional[str])
+            Tuple of:
+            (ProviderResponse, fallback_triggered, fallback_reason, retries_attempted, circuit_tripped, error_category)
         """
         primary = self.get_provider(route)
+        cb = self.circuit_breakers.get(route)
+        total_retries = 0
+
         try:
-            resp = await primary.generate(prompt)
-            return resp, False, None
+            # Execute with circuit breaker and retry
+            if cb:
+                async def _call():
+                    resp, retries = await retry_with_backoff(
+                        primary.generate,
+                        max_retries=1,
+                        base_delay_ms=20.0,
+                        prompt=prompt,
+                    )
+                    return resp, retries
+
+                resp, total_retries = await cb.call(_call)
+            else:
+                resp = await primary.generate(prompt)
+
+            return resp, False, None, total_retries, False, None
+
+        except CircuitBreakerOpenException as exc:
+            logger.warning("Provider circuit breaker OPEN for '%s'; failing fast to backup.", route.value)
+            fallback_provider = self.small_model if route == RouteType.FRONTIER_MODEL else self.deterministic
+            fallback_resp = await fallback_provider.generate(prompt)
+            return fallback_resp, True, "provider_circuit_breaker_open", 0, True, "circuit_breaker_open"
+
         except Exception as exc:
             logger.error(
-                "Primary provider '%s' failed for route '%s': %s. Initiating failover.",
+                "Primary provider '%s' failed for route '%s' after retries: %s. Initiating failover.",
                 primary.metadata.get("model_name"),
                 route.value,
                 exc,
             )
-            # Automatic failover chain:
-            # If frontier fails -> failover to small model
-            # If small model fails -> failover to deterministic engine
-            if route == RouteType.FRONTIER_MODEL:
-                fallback_provider = self.small_model
-            else:
-                fallback_provider = self.deterministic
-
+            # Automatic failover chain
+            fallback_provider = self.small_model if route == RouteType.FRONTIER_MODEL else self.deterministic
             fallback_resp = await fallback_provider.generate(prompt)
-            return fallback_resp, True, f"provider_failure: {str(exc)}"
+            return fallback_resp, True, f"provider_failure: {str(exc)}", 1, False, "provider_error"
 
     def get_all_metadata(self) -> Dict[str, Any]:
         """Return catalog of all registered providers and their pricing/latency profiles."""
@@ -85,6 +111,9 @@ class ProviderRegistry:
                 "small_model": self.small_model.metadata,
                 "frontier_model": self.frontier_model.metadata,
                 "human_review": self.human_review.metadata,
+            },
+            "circuit_breakers": {
+                k.value: v.get_status() for k, v in self.circuit_breakers.items()
             }
         }
 

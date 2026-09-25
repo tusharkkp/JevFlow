@@ -11,6 +11,10 @@ from backend.app.jev.client import (
     TypeSafeTimeoutError,
     TypeSafeAuthError,
 )
+from backend.app.reliability.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerOpenException,
+)
 from backend.app.schemas.decision import (
     DecisionResult,
     IntentType,
@@ -81,6 +85,7 @@ class TypeSafeJevEngine(DecisionEngine):
         client: Optional[TypeSafeJevClient] = None,
         config: Optional[Settings] = None,
         fallback_engine: Optional[DecisionEngine] = None,
+        circuit_breaker: Optional[CircuitBreaker] = None,
     ):
         self.config = config or settings
         self.client = client or TypeSafeJevClient(
@@ -89,32 +94,52 @@ class TypeSafeJevEngine(DecisionEngine):
             timeout_ms=self.config.JEV_TIMEOUT_MS,
         )
         self.fallback_engine = fallback_engine or MockDecisionEngine()
+        self.circuit_breaker = circuit_breaker or CircuitBreaker(
+            name="jev_system_one",
+            failure_threshold=3,
+            recovery_timeout_sec=10.0,
+        )
 
     async def evaluate(self, prompt: str) -> DecisionResult:
         start_time = time.perf_counter()
 
-        # Check if API key is present; if not, gracefully degrade to fallback
+        # 1. If API key is not set, gracefully degrade immediately
         if not self.client.api_key:
             logger.info("TypeSafe API Key not set; using local fallback decision engine.")
             result = await self.fallback_engine.evaluate(prompt)
             result.raw_details["fallback_reason"] = "missing_typesafe_api_key"
+            result.raw_details["error_category"] = "none"
             return result
 
+        # 2. Execute via Circuit Breaker
         try:
-            raw_response = await self.client.evaluate_system_one(
+            raw_response = await self.circuit_breaker.call(
+                self.client.evaluate_system_one,
                 state=prompt,
                 questions=self.SYSTEM_ONE_QUESTIONS,
                 model=self.config.JEV_DEFAULT_MODEL,
             )
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-
             return self._parse_jev_response(raw_response, elapsed_ms)
+
+        except CircuitBreakerOpenException as exc:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+            logger.warning("Jev Circuit Breaker OPEN; failing fast to local fallback engine.")
+            fallback_result = await self.fallback_engine.evaluate(prompt)
+            fallback_result.raw_details["fallback_reason"] = "jev_circuit_breaker_open"
+            fallback_result.raw_details["circuit_breaker_tripped"] = True
+            fallback_result.raw_details["error_category"] = "circuit_breaker_open"
+            fallback_result.raw_details["jev_attempt_latency_ms"] = round(elapsed_ms, 2)
+            return fallback_result
 
         except (TypeSafeTimeoutError, TypeSafeError, Exception) as exc:
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-            logger.warning("Jev System One error (%s); falling back to local heuristic.", exc)
+            error_cat = "timeout" if isinstance(exc, TypeSafeTimeoutError) else "jev_error"
+            logger.warning("Jev System One error (%s: %s); falling back to local heuristic.", error_cat, exc)
             fallback_result = await self.fallback_engine.evaluate(prompt)
             fallback_result.raw_details["fallback_reason"] = f"jev_exception: {str(exc)}"
+            fallback_result.raw_details["error_category"] = error_cat
+            fallback_result.raw_details["circuit_breaker_tripped"] = (self.circuit_breaker.state.value == "open")
             fallback_result.raw_details["jev_attempt_latency_ms"] = round(elapsed_ms, 2)
             return fallback_result
 

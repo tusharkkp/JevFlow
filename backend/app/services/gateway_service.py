@@ -35,13 +35,17 @@ class GatewayService:
 
     async def _capture_system_state(self) -> SystemState:
         """Snapshot current runtime concurrency, provider health, and latencies."""
-        # Simple snapshot
         provider_health_map = {
             RouteType.DETERMINISTIC.value: "healthy",
             RouteType.SMALL_MODEL.value: "healthy",
             RouteType.FRONTIER_MODEL.value: "healthy",
             RouteType.HUMAN_REVIEW.value: "healthy",
         }
+        # If circuit breaker is open, mark provider as unavailable in system state!
+        for route, cb in self.registry.circuit_breakers.items():
+            if cb.state.value == "open":
+                provider_health_map[route.value] = "unavailable"
+
         return SystemState(
             active_requests=self._active_requests,
             provider_status=provider_health_map,
@@ -72,8 +76,15 @@ class GatewayService:
                 system_state=system_state,
             )
 
-            # 4. Model Provider Execution (with automatic failover)
-            provider_resp, exec_fallback, exec_reason = await self.registry.execute_route(
+            # 4. Model Provider Execution (with Circuit Breakers, Retries, and Failover)
+            (
+                provider_resp,
+                exec_fallback,
+                exec_reason,
+                retries_attempted,
+                circuit_tripped,
+                error_cat,
+            ) = await self.registry.execute_route(
                 route=plan.selected_route,
                 prompt=request.prompt,
             )
@@ -97,8 +108,13 @@ class GatewayService:
         )
         cost_saved_usd = max(0.0, baseline_cost_usd - provider_resp.cost_usd)
 
-        fallback_triggered = plan.fallback_triggered or exec_fallback
-        fallback_reason = exec_reason or plan.fallback_reason
+        # Consolidate failure and fallback signals
+        fallback_triggered = plan.fallback_triggered or exec_fallback or decision.raw_details.get("circuit_breaker_tripped", False)
+        fallback_reason = exec_reason or plan.fallback_reason or decision.raw_details.get("fallback_reason")
+        circuit_breaker_tripped = circuit_tripped or decision.raw_details.get("circuit_breaker_tripped", False)
+        error_category = error_cat or decision.raw_details.get("error_category")
+        if not error_category and fallback_triggered:
+            error_category = "policy_rejection" if "reject" in (fallback_reason or "") else "fallback"
 
         telemetry = TelemetryTrace(
             request_id=request_id,
@@ -112,6 +128,9 @@ class GatewayService:
             cache_hit=False,
             fallback_triggered=fallback_triggered,
             fallback_reason=fallback_reason,
+            retries_attempted=retries_attempted,
+            circuit_breaker_tripped=circuit_breaker_tripped,
+            error_category=error_category,
             jev_latency_ms=round(decision.decision_latency_ms, 2),
             model_latency_ms=round(provider_resp.latency_ms, 2),
             gateway_overhead_ms=round(gateway_overhead_ms, 2),
