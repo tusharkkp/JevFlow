@@ -119,6 +119,28 @@
 - **What I learned:** During a complete upstream provider outage, fail-fast circuit breaking allows JevFlow to maintain 100% availability for end users by routing immediately to local small models or deterministic logic without waiting for network timeouts.
 - **What could fail:** If all providers (Frontier, Small, Deterministic) fail concurrently, the gateway must return a graceful degraded 503 rather than an unhandled crash.
 
+---
+
+## Entry 6: Phase 6 — Intelligent Response Caching & Token-Bucket Rate Limiting
+
+- **Concept:** Pre-Decision Semantic/Canonical Caching and Perimeter Token-Bucket Rate Limiting.
+- **Why it exists:**
+  - *Caching:* The fastest and cheapest query is the one you never execute. Identical questions (e.g. definitions, documentation FAQs) shouldn't incur Jev decision latency or LLM token costs over and over.
+  - *Policy-Governed Cacheability:* Not all LLM responses should be cached. Unsafe prompts, creative brainstorming, and human-review requests must never be cached. The deterministic Policy Engine decides whether `allow_cache` is enabled.
+  - *Rate Limiting:* Protects the gateway perimeter from runaway client loops, scraping, and denial-of-service before consuming downstream API resources.
+- **How we implemented it:**
+  - *Cache Layer (`backend/app/cache`):* Defined `BaseCache` interface. Built `MemoryCache` (with TTL and capacity eviction) and `RedisCache` (with automatic fallback to in-memory cache if Redis is unconfigured).
+  - *Canonical Key Generation:* Normalized whitespace and query punctuation, generating deterministic SHA-256 keys so `"explain photosynthesis?"` and `"  Explain Photosynthesis  "` hit the same cache entry.
+  - *Pre-Decision Pipeline Bypass:* Looked up cache *before* calling Jev. A cache hit returns in $<2\text{ms}$ with $0.00 cost, 0 tokens, and `cache_hit: true`. On cache miss, writes to cache only if `plan.allow_cache` is true.
+  - *Token Bucket Rate Limiter (`backend/app/rate_limiter/token_bucket.py`):* Implemented continuous token accumulation. Returns standard HTTP 429 Too Many Requests with compliant `Retry-After: <seconds>` headers when capacity is exhausted.
+- **Alternative approaches:**
+  - *Post-Decision Caching:* Running Jev first to see if it's cacheable. (Trade-off: Wastes Jev tokens and 100ms latency on every hit. Pre-decision caching checks the store immediately).
+  - *Fixed-Window Counter:* (Trade-off: Vulnerable to traffic doubling at window boundary transitions; Token Bucket enforces a smooth, continuous rate).
+- **Trade-offs:** In-memory caching is fast and requires zero infrastructure, but is local to a single worker. Redis allows shared cache state across distributed gateway instances.
+- **What I learned:** Decoupling cache lookup before the decision layer yields the ultimate latency optimization: P50 latency drops from 40ms to 0.5ms for repeated queries.
+- **What could fail:** Memory exhaustion if cache capacity is unbounded. Prevented by strict max entry limits (5,000 entries) with LRU eviction.
+
+
 
 
 

@@ -1,7 +1,7 @@
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from backend.app.core.config import settings, Settings
-from backend.app.schemas.decision import DecisionResult, RouteRecommendation
+from backend.app.schemas.decision import DecisionResult, RouteRecommendation, IntentType
 from backend.app.schemas.response import RouteType
 from backend.app.policy.state import SystemState
 
@@ -210,9 +210,17 @@ class PolicyEngine:
                 fallback_reason="frontier_unavailable",
             )
 
+        # Determine cacheability based on intent and configuration
+        is_cacheable = (
+            self.config.ENABLE_CACHE
+            and decision.is_safe
+            and decision.intent != IntentType.CREATIVE
+            and mapped_route not in (RouteType.HUMAN_REVIEW, RouteType.FALLBACK)
+        )
+
         return ExecutionPlan(
             selected_route=mapped_route,
             policy_reason=f"Standard policy matched recommendation: {decision.recommended_route.value}.",
             applied_gates=applied_gates,
-            allow_cache=True,
+            allow_cache=is_cacheable,
         )
