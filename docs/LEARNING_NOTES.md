@@ -186,6 +186,32 @@
 - **What I learned:** JevFlow achieves **83.3% routing accuracy** and **66.3% cost reduction** compared to Baseline (33.3% accuracy, 0% reduction) and Static Rules (50.0% accuracy, 65.5% reduction). Furthermore, offloading queries to small models and cache reduces overall **P50 latency by 54.8%** (from 141.8ms down to 64.1ms), conclusively disproving the fear that the decision hop harms user experience.
 - **What could fail:** Benchmark drift if the curated dataset does not represent future production query distributions. Solved by designing `BenchmarkItem` to be easily extensible as production telemetry identifies new traffic patterns.
 
+---
+
+## Entry 9: Phase 9 — Observability & Evaluation Dashboard: Real-Time Telemetry & Flamegraph Waterfalls
+
+- **Concept:** Client-side Observability, Flamegraph / Distributed Span Waterfall Profiling, and Interactive Gateway Sandboxing.
+- **Why it exists:** In distributed systems, opaque backends invite guesswork. When a gateway combines probabilistic decisions, deterministic policies, token bucket rate limiters, response caches, circuit breakers, and multiple model providers, operators need a single-pane-of-glass dashboard to answer operational questions in milliseconds:
+  1. *"Why did prompt X route to a Small Model instead of Frontier?"*
+  2. *"How many milliseconds were spent in the Jev decision layer vs model execution vs serialization?"*
+  3. *"Are any circuit breakers open or tripping?"*
+  4. *"What is our live cost reduction percentage across current production traffic?"*
+- **How we implemented it:**
+  - *Next.js App Router Architecture (`frontend/src`):* Bootstrapped Next.js 16 with TypeScript, React 19, and a custom high-tech obsidian design system in `globals.css` (glassmorphism panels, pulsing status dots, glow route badges, and custom scrollbars).
+  - *API Client (`frontend/src/lib/api.ts`):* Built a typed asynchronous API client talking to FastAPI (`http://localhost:8000`), with graceful degradation and error handling.
+  - *System Perimeter Bar (`Header.tsx`):* Displays real-time Gateway status (`ONLINE`/`OFFLINE`), active Decision Engine mode, Rate Limiter fill capacity, Cache size, and auto-refresh sync.
+  - *KPI Overview Cards (`KpiGrid.tsx`):* Presents total evaluated requests, net cost savings ($), cost reduction %, P50 median latency, P95/P99 tail latencies, and traffic route percentage breakdown.
+  - *Interactive Routing Playground (`Playground.tsx`):* Allows interactive prompt entry with preloaded archetypes, latency and cost constraints, and a visual **Flamegraph Waterfall Timeline** segmenting `Jev Decision`, `Model Execution`, and `Gateway Overhead`.
+  - *Live Trace Explorer (`TraceTable.tsx`):* Filterable table with expand/collapse rows showing granular sub-millisecond breakdowns, token accounting, and policy enforcement rationale.
+  - *Empirical Evaluation View (`BenchmarkView.tsx`):* Provides one-click execution of the 3-way comparative benchmark suite (Baseline vs Rules vs JevFlow).
+- **Alternative approaches:**
+  - *Pre-packaged APM Dashboards (e.g. Grafana / Datadog):* (Trade-off: Excellent for generic CPU/RAM/HTTP metrics, but incapable of visualizing Jev multi-question probability distributions, rubric complexity scores, or counter-factual LLM cost savings without cumbersome custom plugins).
+  - *Monolithic HTML Templates (Jinja2):* (Trade-off: Requires page reloads, lacks smooth micro-animations, client-side auto-polling, and interactive flamegraph timeline rendering).
+- **Trade-offs:** Running a Next.js frontend introduces Node.js as a runtime dependency alongside Python. However, compiling Next.js statically or using it as a decoupled SPA preserves clean separation between the gateway engine and the user interface.
+- **What I learned:** Breaking down the request lifecycle into an explicit visual flamegraph (`Jev Decision` $\rightarrow$ `Provider Execution` $\rightarrow$ `Gateway Logic`) immediately reassures operators that the decision hop is negligible (~10ms) compared to the massive latency and cost savings achieved by avoiding the Frontier model.
+- **What could fail:** Network CORS misconfiguration or gateway backend downtime. Handled gracefully via `Promise.allSettled` in the polling loop and prominent visual offline indicators.
+
+
 
 
 
