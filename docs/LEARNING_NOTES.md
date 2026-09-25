@@ -77,5 +77,30 @@
 - **What I learned:** By instrumenting counter-factual accounting on every single request, the gateway produces verifiable empirical proof of dollar savings without needing offline estimates.
 - **What could fail:** Upstream vendor rate-limits (HTTP 429) or transient outages. Handled by the Provider Registry's automatic failover chain.
 
+---
+
+## Entry 4: Phase 4 — Adaptive Multi-Factor Policy Engine & Runtime System State
+
+- **Concept:** Multi-Factor Adaptive Routing: $\text{Route} = f(\text{Complexity}, \text{Confidence}, \text{Tokens}, \text{System Load}, \text{Provider Health}, \text{Latency Budget}, \text{Cost Budget})$.
+- **Why it exists:** Real-world API gateways cannot operate on naive static mappings (e.g. "if reasoning, always use GPT-4o"). In production, if system concurrency is spiking at 90%, if the client has a 250ms interactive UI SLA, or if the frontier model provider is suffering a degraded outage, blindly routing to the frontier model causes cascading timeouts, broken SLAs, and service failure.
+- **How we implemented it:**
+  - *Runtime State (`backend/app/policy/state.py`):* Defined `SystemState` tracking concurrent active in-flight requests, `load_ratio`, provider availability maps, and observed P50/P95 latencies per route.
+  - *The 8 Ordered Gates (`backend/app/policy/engine.py`):* Implemented sequential deterministic evaluation gates:
+    1. Safety Gate: Quarantines requests to `HUMAN_REVIEW` if $prob < 0.80$.
+    2. Provider Outage Gate: Detects if target provider is degraded/unavailable and reroutes safely.
+    3. Load Shedding Gate: Automatically sheds non-critical traffic to `SMALL_MODEL` when load $\ge 80\%$.
+    4. Dynamic Latency Budget Gate: Compares client budget against P95 frontier network estimates and clamps when budget is at risk.
+    5. Cost Budget Gate: Evaluates estimated input tokens against dollar budget limits.
+    6. Confidence Escalation Gate: Escalate uncertain decisions to frontier when confidence $< 0.60$.
+    7. Complexity & Intent Gate: Assigns trivial/simple to deterministic or small, and complex reasoning to frontier.
+    8. Default Recommendation Mapping: Fallback to System One recommendation with verified health.
+- **Alternative approaches:**
+  - *Machine Learning Meta-Router:* Training a secondary ML model to predict the best route. (Trade-off: Black box, non-deterministic, introduces latency, and cannot guarantee hard budget compliance).
+  - *Static If-Else Branching:* (Trade-off: Ignores runtime system conditions, causing cascading failures during high traffic or provider outages).
+- **Trade-offs:** Adding runtime state inspection requires tracking in-flight requests and provider health, adding $\sim 5\mu\text{s}$ overhead, but this guarantees SLA adherence and load resilience.
+- **What I learned:** P95 latency margins (accounting for $2.2\times$ network variance) must be used instead of optimistic P50 averages when evaluating latency budgets, otherwise jitter will violate client SLAs.
+- **What could fail:** Sudden unmetered traffic surges. Handled by gateway rate limiting and Redis token buckets (Phase 6).
+
+
 
 

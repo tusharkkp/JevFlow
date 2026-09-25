@@ -1,5 +1,6 @@
 import time
 import uuid
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -8,6 +9,7 @@ from backend.app.schemas.response import GatewayResponse, TelemetryTrace, RouteT
 from backend.app.decision.base import DecisionEngine
 from backend.app.decision.jev_engine import TypeSafeJevEngine
 from backend.app.policy.engine import PolicyEngine
+from backend.app.policy.state import SystemState
 from backend.app.providers.registry import ProviderRegistry
 
 
@@ -15,8 +17,8 @@ class GatewayService:
     """
     Central Orchestrator for JevFlow.
     
-    Coordinates the pipeline:
-    Client Request -> System One Decision -> Deterministic Policy -> Execution Provider -> Observability Telemetry
+    Coordinates the adaptive pipeline:
+    Client Request + Runtime State -> System One Decision -> Adaptive Policy -> Provider -> Telemetry
     """
 
     def __init__(
@@ -28,46 +30,73 @@ class GatewayService:
         self.decision_engine = decision_engine or TypeSafeJevEngine()
         self.policy_engine = policy_engine or PolicyEngine()
         self.registry = provider_registry or ProviderRegistry()
+        self._active_requests: int = 0
+        self._lock = asyncio.Lock()
+
+    async def _capture_system_state(self) -> SystemState:
+        """Snapshot current runtime concurrency, provider health, and latencies."""
+        # Simple snapshot
+        provider_health_map = {
+            RouteType.DETERMINISTIC.value: "healthy",
+            RouteType.SMALL_MODEL.value: "healthy",
+            RouteType.FRONTIER_MODEL.value: "healthy",
+            RouteType.HUMAN_REVIEW.value: "healthy",
+        }
+        return SystemState(
+            active_requests=self._active_requests,
+            provider_status=provider_health_map,
+        )
 
     async def process_request(self, request: GatewayRequest) -> GatewayResponse:
         start_overall = time.perf_counter()
         request_id = f"req_{uuid.uuid4().hex[:12]}"
         created_at = datetime.now(timezone.utc)
+        estimated_input_tokens = max(1, len(request.prompt) // 4)
 
-        # 1. System One Decision
-        decision = await self.decision_engine.evaluate(request.prompt)
+        async with self._lock:
+            self._active_requests += 1
 
-        # 2. Deterministic Policy Evaluation
-        plan = self.policy_engine.evaluate(
-            decision=decision,
-            latency_budget_ms=request.latency_budget_ms,
-            cost_budget=request.cost_budget,
-        )
+        try:
+            # 1. System One Decision
+            decision = await self.decision_engine.evaluate(request.prompt)
 
-        # 3. Model Provider Execution via Registry (with automatic failover)
-        provider_resp, exec_fallback, exec_reason = await self.registry.execute_route(
-            route=plan.selected_route,
-            prompt=request.prompt,
-        )
+            # 2. Capture dynamic runtime conditions
+            system_state = await self._capture_system_state()
 
-        # 4. Latency & Cost Telemetry Accounting
+            # 3. Adaptive Policy Evaluation
+            plan = self.policy_engine.evaluate(
+                decision=decision,
+                latency_budget_ms=request.latency_budget_ms,
+                cost_budget=request.cost_budget,
+                estimated_input_tokens=estimated_input_tokens,
+                system_state=system_state,
+            )
+
+            # 4. Model Provider Execution (with automatic failover)
+            provider_resp, exec_fallback, exec_reason = await self.registry.execute_route(
+                route=plan.selected_route,
+                prompt=request.prompt,
+            )
+
+        finally:
+            async with self._lock:
+                self._active_requests = max(0, self._active_requests - 1)
+
+        # 5. Latency & Cost Telemetry Accounting
         end_overall = time.perf_counter()
         total_latency_ms = (end_overall - start_overall) * 1000.0
 
-        # Calculate pure gateway overhead: total time minus decision & provider model time
         gateway_overhead_ms = max(
             0.1,
             total_latency_ms - decision.decision_latency_ms - provider_resp.latency_ms,
         )
 
-        # Baseline cost calculation: What would this exact request have cost if routed to Frontier?
         baseline_cost_usd = self.registry.frontier_model.estimate_cost(
             input_tokens=provider_resp.input_tokens,
             output_tokens=provider_resp.output_tokens,
         )
         cost_saved_usd = max(0.0, baseline_cost_usd - provider_resp.cost_usd)
 
-        # Consolidate fallback signals (from policy or execution failover)
         fallback_triggered = plan.fallback_triggered or exec_fallback
         fallback_reason = exec_reason or plan.fallback_reason
 

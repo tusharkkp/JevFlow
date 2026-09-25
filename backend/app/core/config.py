@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     MEDIUM_CONFIDENCE_THRESHOLD: float = 0.60
     MAX_LATENCY_BUDGET_MS: int = 2000
     MAX_COST_PER_REQUEST: float = 0.05
+    HIGH_LOAD_THRESHOLD: float = 0.80
+    MAX_CONCURRENCY: int = 100
     ENABLE_HUMAN_REVIEW: bool = True
     ENABLE_CACHE: bool = True
 
