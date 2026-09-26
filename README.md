@@ -101,52 +101,52 @@ JevFlow deploys a dual-system cognitive architecture:
 
 ```mermaid
 flowchart TD
-    Client(["User / Client App"]) -->|POST /v1/chat| Gateway["JevFlow Perimeter"]
+    Client(["User / Client App"]) -->|"POST /v1/chat"| Gateway["JevFlow Perimeter"]
     
-    subgraph Perimeter["Perimeter & Gatekeeping"]
-        Gateway --> RateLimiter{"Token Bucket\nRate Limiter"}
-        RateLimiter -->|Quota Exceeded| HTTP429["429 Too Many Requests\n(Retry-After Header)"]
-        RateLimiter -->|Allowed| CacheLookup{"Canonical SHA-256\nCache Check (Redis)"}
+    subgraph Perimeter["Perimeter and Gatekeeping"]
+        Gateway --> RateLimiter{"Token Bucket Rate Limiter"}
+        RateLimiter -->|"Quota Exceeded"| HTTP429["429 Too Many Requests"]
+        RateLimiter -->|"Allowed"| CacheLookup{"Canonical SHA-256 Cache Check"}
     end
 
-    CacheLookup -->|CACHE HIT (0ms, $0.00)| CachedResponse(["Instant Response"])
+    CacheLookup -->|"CACHE HIT: 0ms, $0.00"| CachedResponse(["Instant Cached Response"])
     
     subgraph DecisionLayer["Cognitive Decision Layer"]
-        CacheLookup -->|CACHE MISS| JevClient["TypeSafe Jev Client\n(System One API)"]
-        JevClient -.->|Timeout / Outage| MockEngine["Calibrated Offline\nFallback Engine"]
-        JevClient --> JevOutput["Decision Tuple:\n• Intent (Choice)\n• Complexity (0.0-2.0)\n• Safety Probability\n• Route Recommendation"]
+        CacheLookup -->|"CACHE MISS"| JevClient["TypeSafe Jev Client"]
+        JevClient -.->|"Timeout or Outage"| MockEngine["Calibrated Offline Fallback"]
+        JevClient --> JevOutput["Decision Tuple: Intent, Complexity, Safety, Route"]
         MockEngine --> JevOutput
     end
 
-    subgraph PolicyEngine["Deterministic Policy Engine (8 Gates)"]
+    subgraph PolicyEngine["Deterministic Policy Engine"]
         JevOutput --> G1{"Gate 1: Safety Check"}
-        G1 -->|Unsafe| HR["Human Review Route"]
-        G1 -->|Safe| G2{"Gate 2: Provider Outage?"}
-        G2 -->|Yes| Failover["Failover to Backup"]
-        G2 -->|No| G3{"Gate 3: High Concurrency (>80%)?"}
-        G3 -->|Yes| Shed["Shed Load to Small Model"]
-        G3 -->|No| G4{"Gate 4: Latency Budget Exceeded?"}
-        G4 -->|Yes| ClampSmall["Clamp to Small Model"]
-        G4 -->|No| G5{"Gate 5: Token-Aware Cost Exceeded?"}
-        G5 -->|Yes| ClampCost["Clamp Route"]
-        G5 -->|No| G6{"Gate 6: Low Confidence (<0.60)?"}
-        G6 -->|Yes| Escalate["Escalate to Frontier"]
-        G6 -->|No| G7["Complexity / Intent Mapping"]
+        G1 -->|"Unsafe"| HR["Human Review Route"]
+        G1 -->|"Safe"| G2{"Gate 2: Provider Outage?"}
+        G2 -->|"Yes"| Failover["Failover to Backup"]
+        G2 -->|"No"| G3{"Gate 3: High Concurrency over 80%?"}
+        G3 -->|"Yes"| Shed["Shed Load to Small Model"]
+        G3 -->|"No"| G4{"Gate 4: Latency Budget Exceeded?"}
+        G4 -->|"Yes"| ClampSmall["Clamp to Small Model"]
+        G4 -->|"No"| G5{"Gate 5: Cost Budget Exceeded?"}
+        G5 -->|"Yes"| ClampCost["Clamp Route"]
+        G5 -->|"No"| G6{"Gate 6: Low Confidence under 0.60?"}
+        G6 -->|"Yes"| Escalate["Escalate to Frontier"]
+        G6 -->|"No"| G7["Complexity and Intent Mapping"]
     end
 
-    subgraph Providers["Execution Providers (Circuit Breaker Protected)"]
-        G7 --> Deterministic["Deterministic Provider\n($0.00, < 1ms)"]
-        G7 --> SmallModel["Small Model (Llama 3.1 8B / GPT-4o-mini)\n($0.15 - $0.60 / 1M)"]
-        G7 --> FrontierModel["Frontier Model (Claude 3.5 Sonnet / GPT-4o)\n($2.50 - $10.00 / 1M)"]
+    subgraph Providers["Execution Providers"]
+        G7 --> Deterministic["Deterministic Provider ($0.00)"]
+        G7 --> SmallModel["Small Model: Llama 3.1 8B / GPT-4o-mini"]
+        G7 --> FrontierModel["Frontier Model: Claude 3.5 Sonnet / GPT-4o"]
         HR --> ReviewProvider["Human Review Sandbox"]
     end
 
-    subgraph Observability["Telemetry & Accounting"]
+    subgraph Observability["Telemetry and Accounting"]
         Deterministic --> Telemetry["Telemetry Repository"]
         SmallModel --> Telemetry
         FrontierModel --> Telemetry
         ReviewProvider --> Telemetry
-        Telemetry --> DB[(Async SQLite / Postgres)]
+        Telemetry --> DB[("Async SQLite / PostgreSQL")]
         Telemetry --> Dashboard["Next.js Real-time Dashboard"]
     end
 
