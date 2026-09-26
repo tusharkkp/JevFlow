@@ -1,0 +1,72 @@
+services:
+  # ----------------------------------------------------------------------------
+  # Redis Cache & Distributed Rate Limiter
+  # Uses the pre-cached redis:7 local docker image
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7
+    container_name: jevflow-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - jevflow-net
+
+  # ----------------------------------------------------------------------------
+  # FastAPI Adaptive Gateway Core
+  # ----------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: jevflow-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - HOST=0.0.0.0
+      - PORT=8000
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - telemetry_data:/app/data
+    networks:
+      - jevflow-net
+
+  # ----------------------------------------------------------------------------
+  # Next.js Observability & Evaluation Dashboard
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: jevflow-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_GATEWAY_URL=http://localhost:8000
+      - PORT=3000
+    depends_on:
+      - backend
+    networks:
+      - jevflow-net
+
+networks:
+  jevflow-net:
+    driver: bridge
+
+volumes:
+  redis_data:
+  telemetry_data:

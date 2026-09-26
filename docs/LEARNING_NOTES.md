@@ -211,6 +211,25 @@
 - **What I learned:** Breaking down the request lifecycle into an explicit visual flamegraph (`Jev Decision` $\rightarrow$ `Provider Execution` $\rightarrow$ `Gateway Logic`) immediately reassures operators that the decision hop is negligible (~10ms) compared to the massive latency and cost savings achieved by avoiding the Frontier model.
 - **What could fail:** Network CORS misconfiguration or gateway backend downtime. Handled gracefully via `Promise.allSettled` in the polling loop and prominent visual offline indicators.
 
+---
+
+## Entry 10: Phase 10 — Production Containerization: Docker Compose, Distributed Redis & Real LLM Providers
+
+- **Concept:** Multi-container Orchestration, Distributed Caching via Redis, and Universal OpenAI-compatible Real Inference.
+- **Why it exists:** Production AI systems cannot run as disconnected manual terminal commands on an operator's workstation. To ensure deterministic deployments, high-availability caching, and real LLM connectivity, the entire architecture (FastAPI gateway, Redis cache, Next.js frontend) must be containerized and orchestrated via Docker Compose.
+- **How we implemented it:**
+  - *Redis Service (`docker-compose.yml`):* Leveraged local `redis:7` image with container healthchecks (`redis-cli ping`). Configured `REDIS_URL=redis://redis:6379/0` in container networking.
+  - *Backend Container (`backend/Dockerfile`):* Slim Python 3.12 image, unbuffered logging, dependency caching, FastAPI entrypoint, and automated curl healthchecks.
+  - *Frontend Container (`frontend/Dockerfile`):* Multi-stage build (deps $\rightarrow$ builder $\rightarrow$ runner) compiling Next.js in production mode on port 3000.
+  - *Real Model Integration (`backend/app/providers/openai_provider.py`):* Created `OpenAICompatibleProvider` supporting OpenAI, Groq, OpenRouter, and DeepSeek with token tracking, true latency accounting, and graceful offline fallback.
+- **Alternative approaches:**
+  - *Local Virtualenv Execution:* (Trade-off: Fast for development, but vulnerable to OS environment variations, missing Redis daemon, and port collision issues).
+  - *Kubernetes (K8s):* (Trade-off: Overkill for local/single-node deployments; Docker Compose offers optimal balance of speed and container isolation).
+- **Trade-offs:** Docker builds require initial image compilation time, but guarantee identical execution across local developer workstations, CI/CD pipelines, and cloud staging environments.
+- **What I learned:** Decoupling the caching layer via `RedisCache` with an automatic `MemoryCache` fallback invariant ensures that whether Redis is running inside Docker or temporarily stopped, the gateway continues to serve requests without dropping traffic.
+- **What could fail:** Port binding collisions if existing host processes occupy ports 3000, 6379, or 8000. Resolved by verifying and terminating host dev servers before launching Compose.
+
+
 
 
 

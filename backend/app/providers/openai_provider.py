@@ -44,6 +44,8 @@ class OpenAICompatibleProvider(ModelProvider):
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/jevflow/gateway",
+            "X-Title": "JevFlow Adaptive Gateway",
         }
 
         payload = {

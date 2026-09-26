@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv
+venv
+ENV
+
+# Testing & Logs
+.pytest_cache
+htmlcov
+*.log
+
+# Node & Next.js
+node_modules
+frontend/node_modules
+frontend/.next
+frontend/out
+npm-debug.log*
+
+# Database & Cache
+*.sqlite3
+*.db

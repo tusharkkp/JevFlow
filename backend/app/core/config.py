@@ -42,5 +42,8 @@ class Settings(BaseSettings):
     ENABLE_HUMAN_REVIEW: bool = True
     ENABLE_CACHE: bool = True
 
+    # Cache & Rate Limiting (Redis)
+    REDIS_URL: Optional[str] = None
+
 
 settings = Settings()

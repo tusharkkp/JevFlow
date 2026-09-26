@@ -10,6 +10,7 @@ from backend.app.services.gateway_service import GatewayService
 from backend.app.decision.jev_engine import TypeSafeJevEngine
 from backend.app.providers.registry import ProviderRegistry
 from backend.app.cache.memory_cache import MemoryCache
+from backend.app.cache.redis_cache import RedisCache
 from backend.app.rate_limiter.token_bucket import TokenBucketRateLimiter
 from backend.app.db.session import init_db
 from backend.app.telemetry.repository import TelemetryRepository
@@ -43,7 +44,7 @@ app.add_middleware(
 
 # Shared singletons
 provider_registry = ProviderRegistry()
-gateway_cache = MemoryCache(max_entries=5000)
+gateway_cache = RedisCache(redis_url=settings.REDIS_URL) if settings.REDIS_URL else MemoryCache(max_entries=5000)
 rate_limiter = TokenBucketRateLimiter(requests_per_minute=60, burst_capacity=10)
 telemetry_repo = TelemetryRepository()
 
