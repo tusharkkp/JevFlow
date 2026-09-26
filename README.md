@@ -1,5 +1,14 @@
-# JevFlow — Adaptive AI Gateway
-### High-Performance LLM Routing Powered by System One Decisions & Deterministic Policy Enforcement
+<p align="center">
+  <a href="https://github.com/tusharkkp/JevFlow">
+    <img src="assets/JevFlow.png" alt="JevFlow Logo" width="180" style="border-radius: 20px;" />
+  </a>
+</p>
+
+<h1 align="center">JevFlow — Adaptive AI Gateway</h1>
+
+<p align="center">
+  <strong>High-Performance LLM Routing Powered by System One Decisions &amp; Deterministic Policy Enforcement</strong>
+</p>
 
 <p align="center">
   <a href="https://github.com/tusharkkp/JevFlow/blob/main/LICENSE">

@@ -28,16 +28,18 @@ export function Header({
         {/* Brand & Subtitle */}
         <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
           <div style={{
-            width: "42px",
-            height: "42px",
+            width: "44px",
+            height: "44px",
             borderRadius: "12px",
-            background: "linear-gradient(135deg, #0284c7 0%, #a855f7 100%)",
+            overflow: "hidden",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            boxShadow: "0 0 20px rgba(56, 189, 248, 0.3)"
+            boxShadow: "0 0 20px rgba(56, 189, 248, 0.35)",
+            border: "1px solid rgba(255, 255, 255, 0.15)",
+            background: "#07090e"
           }}>
-            <Zap size={22} color="#ffffff" />
+            <img src="/JevFlow.png" alt="JevFlow Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
