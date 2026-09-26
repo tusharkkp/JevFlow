@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     JEV_DEFAULT_MODEL: str = "jev-latest"
     JEV_TIMEOUT_MS: int = 1500
 
+    # Real Model Providers (OpenAI, Groq, OpenRouter, DeepSeek, Ollama)
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    SMALL_MODEL_NAME: str = "gpt-4o-mini"
+    FRONTIER_MODEL_NAME: str = "gpt-4o"
+    SMALL_MODEL_INPUT_COST_PER_M: float = 0.15
+    SMALL_MODEL_OUTPUT_COST_PER_M: float = 0.60
+    FRONTIER_MODEL_INPUT_COST_PER_M: float = 2.50
+    FRONTIER_MODEL_OUTPUT_COST_PER_M: float = 10.00
+
     # Policy Engine Deterministic Thresholds
     HIGH_CONFIDENCE_THRESHOLD: float = 0.85
     MEDIUM_CONFIDENCE_THRESHOLD: float = 0.60

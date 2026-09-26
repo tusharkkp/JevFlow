@@ -1,11 +1,13 @@
 import logging
 from typing import Dict, Any, Optional, Tuple
+from backend.app.core.config import settings
 from backend.app.schemas.response import RouteType
 from backend.app.providers.base import ModelProvider, ProviderResponse, ProviderHealth
 from backend.app.providers.deterministic_provider import DeterministicProvider
 from backend.app.providers.small_model_provider import SmallModelProvider
 from backend.app.providers.frontier_model_provider import FrontierModelProvider
 from backend.app.providers.human_review_provider import HumanReviewProvider
+from backend.app.providers.openai_provider import OpenAICompatibleProvider
 from backend.app.reliability.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
 from backend.app.reliability.retry import retry_with_backoff
 
@@ -25,8 +27,36 @@ class ProviderRegistry:
         human_review_provider: Optional[ModelProvider] = None,
     ):
         self.deterministic = deterministic_provider or DeterministicProvider()
-        self.small_model = small_model_provider or SmallModelProvider()
-        self.frontier_model = frontier_model_provider or FrontierModelProvider()
+
+        # Wire Real Provider if OPENAI_API_KEY is set, else use simulated provider
+        if small_model_provider is not None:
+            self.small_model = small_model_provider
+        elif settings.OPENAI_API_KEY:
+            logger.info("Initializing real Small Model Provider via %s (%s)", settings.OPENAI_BASE_URL, settings.SMALL_MODEL_NAME)
+            self.small_model = OpenAICompatibleProvider(
+                api_key=settings.OPENAI_API_KEY,
+                model_name=settings.SMALL_MODEL_NAME,
+                base_url=settings.OPENAI_BASE_URL,
+                input_cost_per_million=settings.SMALL_MODEL_INPUT_COST_PER_M,
+                output_cost_per_million=settings.SMALL_MODEL_OUTPUT_COST_PER_M,
+            )
+        else:
+            self.small_model = SmallModelProvider()
+
+        if frontier_model_provider is not None:
+            self.frontier_model = frontier_model_provider
+        elif settings.OPENAI_API_KEY:
+            logger.info("Initializing real Frontier Model Provider via %s (%s)", settings.OPENAI_BASE_URL, settings.FRONTIER_MODEL_NAME)
+            self.frontier_model = OpenAICompatibleProvider(
+                api_key=settings.OPENAI_API_KEY,
+                model_name=settings.FRONTIER_MODEL_NAME,
+                base_url=settings.OPENAI_BASE_URL,
+                input_cost_per_million=settings.FRONTIER_MODEL_INPUT_COST_PER_M,
+                output_cost_per_million=settings.FRONTIER_MODEL_OUTPUT_COST_PER_M,
+            )
+        else:
+            self.frontier_model = FrontierModelProvider()
+
         self.human_review = human_review_provider or HumanReviewProvider()
 
         # Primary mapping: RouteType -> ModelProvider
