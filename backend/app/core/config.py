@@ -44,6 +44,18 @@ class Settings(BaseSettings):
 
     # Cache & Rate Limiting (Redis)
     REDIS_URL: Optional[str] = None
+    RATE_LIMIT_REQUESTS_PER_MINUTE: int = 60
+    RATE_LIMIT_BURST_CAPACITY: int = 10
+
+    # Database
+    DATABASE_URL: Optional[str] = "sqlite+aiosqlite:///./jevflow_telemetry.db"
+
+    # OpenRouter Specific (JEV Decisions API & JEV Smart Router)
+    OPENROUTER_API_KEY: Optional[str] = None
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_DECISIONS_URL: str = "https://openrouter.ai/api/alpha/decisions"
+    JEV_DECISION_MODEL: str = "typesafe/jev-1.13"
+    JEV_ROUTER_MODEL: str = "typesafe/jev-router"
 
 
 settings = Settings()

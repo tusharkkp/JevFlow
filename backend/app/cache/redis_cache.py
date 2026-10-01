@@ -103,4 +103,6 @@ class RedisCache(BaseCache):
             "backend": "RedisCache",
             "status": "connected",
             "redis_url": self.redis_url,
+            "size": 0,
+            "max_size": 10000,
         }

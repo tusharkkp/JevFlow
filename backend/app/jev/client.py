@@ -45,23 +45,30 @@ class TypeSafeJevClient:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        base_url: str = "https://api.typesafe.ai",
-        timeout_ms: int = 1500,
+        base_url: Optional[str] = None,
+        timeout_ms: int = 2500,
         http_client: Optional[httpx.AsyncClient] = None,
     ):
         self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
+        if self.api_key and (self.api_key.startswith("sk-or-") or "openrouter.ai" in (base_url or "")):
+            self.base_url = (base_url or "https://openrouter.ai/api/alpha/decisions").rstrip("/")
+        else:
+            self.base_url = (base_url or "https://api.typesafe.ai").rstrip("/")
         self.timeout = httpx.Timeout(timeout_ms / 1000.0)
         self._custom_client = http_client
 
     def _get_headers(self) -> Dict[str, str]:
         if not self.api_key:
-            raise TypeSafeAuthError("TypeSafe API Key is not configured. Set TYPESAFE_API_KEY in .env.")
-        return {
+            raise TypeSafeAuthError("API Key is not configured. Set OPENROUTER_API_KEY or TYPESAFE_API_KEY in .env.")
+        headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "User-Agent": "JevFlow-Gateway/0.1.0",
         }
+        if "openrouter.ai" in self.base_url or (self.api_key and self.api_key.startswith("sk-or-")):
+            headers["HTTP-Referer"] = "https://github.com/tusharkkp/JevFlow"
+            headers["X-Title"] = "JevFlow Gateway"
+        return headers
 
     async def _execute_http(
         self,
@@ -107,20 +114,27 @@ class TypeSafeJevClient:
         model: str = "jev-latest",
     ) -> Dict[str, Any]:
         """
-        Send a multi-question evaluation to POST /v1/systemone.
+        Send a multi-question evaluation to POST /v1/systemone or OpenRouter /api/alpha/decisions.
         
         Args:
             state: The content all questions refer to (string, dict, or list).
             questions: Dict of typed question objects keyed by question identifier.
-            model: Model name or alias (e.g. 'jev-latest').
+            model: Model name or alias (e.g. 'jev-latest' or 'typesafe/jev-1.13').
             
         Returns:
             Dict containing 'model', 'answers', and 'usage'.
         """
         headers = self._get_headers()
-        url = f"{self.base_url}/v1/systemone"
+        is_openrouter = "openrouter.ai" in self.base_url or (self.api_key and self.api_key.startswith("sk-or-"))
+        if is_openrouter:
+            url = f"{self.base_url}/api/alpha/decisions" if not self.base_url.endswith("/decisions") else self.base_url
+            target_model = "typesafe/jev-1.13" if model in ("jev-latest", "typesafe/jev-1.13") else model
+        else:
+            url = f"{self.base_url}/v1/systemone"
+            target_model = model
+
         payload = {
-            "model": model,
+            "model": target_model,
             "state": state,
             "questions": questions,
         }

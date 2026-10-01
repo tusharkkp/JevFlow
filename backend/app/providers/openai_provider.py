@@ -73,11 +73,12 @@ class OpenAICompatibleProvider(ModelProvider):
 
             data = resp.json()
             choice = data["choices"][0]
-            content = choice["message"]["content"]
+            message = choice.get("message", {})
+            content = message.get("content") or message.get("reasoning") or ""
             usage = data.get("usage", {})
 
-            input_tokens = usage.get("prompt_tokens", max(1, len(prompt) // 4))
-            output_tokens = usage.get("completion_tokens", max(1, len(content) // 4))
+            input_tokens = usage.get("prompt_tokens") or max(1, len(prompt) // 4)
+            output_tokens = usage.get("completion_tokens") or max(1, len(content) // 4)
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
             cost_usd = self.estimate_cost(input_tokens, output_tokens)

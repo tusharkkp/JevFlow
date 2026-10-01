@@ -64,8 +64,11 @@ class TokenBucketRateLimiter:
         async with self._lock:
             return {
                 "active_buckets": len(self._buckets),
+                "tracked_clients_count": len(self._buckets),
                 "total_requests": self.total_requests_count,
                 "rejected_requests": self.rejected_requests_count,
                 "refill_rate_per_sec": self.refill_rate,
+                "rate_limit_per_second": self.refill_rate,
                 "burst_capacity": self.capacity,
+                "capacity": self.capacity,
             }

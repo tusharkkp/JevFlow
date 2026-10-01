@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { GatewayResponse } from "@/lib/types";
 import { api } from "@/lib/api";
-import { Play, Sparkles, CheckCircle2, AlertTriangle, ShieldCheck, DollarSign, Clock, Layers } from "lucide-react";
+import { Play, Sparkles, CheckCircle2, AlertTriangle, Clock } from "lucide-react";
 
 interface PlaygroundProps {
   onExecuted: () => void;
@@ -37,8 +37,8 @@ export function Playground({ onExecuted }: PlaygroundProps) {
       );
       setResponse(res);
       onExecuted();
-    } catch (err: any) {
-      setError(err.message || "Failed to process request");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to process request");
     } finally {
       setLoading(false);
     }
@@ -204,7 +204,7 @@ export function Playground({ onExecuted }: PlaygroundProps) {
               {t.jev_latency_ms > 0 && (
                 <div
                   className="waterfall-segment segment-decision"
-                  style={{ width: `${Math.max(12, (t.jev_latency_ms / t.total_latency_ms) * 100)}%` }}
+                  style={{ width: `${Math.max(12, Math.min(100, (t.jev_latency_ms / Math.max(0.1, t.total_latency_ms)) * 100))}%` }}
                   title={`Jev Decision Layer: ${t.jev_latency_ms} ms`}
                 >
                   Jev: {t.jev_latency_ms.toFixed(0)}ms
@@ -213,7 +213,7 @@ export function Playground({ onExecuted }: PlaygroundProps) {
               {t.model_latency_ms > 0 && (
                 <div
                   className="waterfall-segment segment-model"
-                  style={{ width: `${Math.max(12, (t.model_latency_ms / t.total_latency_ms) * 100)}%` }}
+                  style={{ width: `${Math.max(12, Math.min(100, (t.model_latency_ms / Math.max(0.1, t.total_latency_ms)) * 100))}%` }}
                   title={`Provider Execution: ${t.model_latency_ms} ms`}
                 >
                   Model: {t.model_latency_ms.toFixed(0)}ms
@@ -221,7 +221,7 @@ export function Playground({ onExecuted }: PlaygroundProps) {
               )}
               <div
                 className="waterfall-segment segment-overhead"
-                style={{ width: `${Math.max(8, (t.gateway_overhead_ms / t.total_latency_ms) * 100)}%` }}
+                style={{ width: `${Math.max(8, Math.min(100, (t.gateway_overhead_ms / Math.max(0.1, t.total_latency_ms)) * 100))}%` }}
                 title={`Gateway Overhead: ${t.gateway_overhead_ms} ms`}
               >
                 Overhead: {t.gateway_overhead_ms.toFixed(0)}ms
@@ -291,7 +291,7 @@ export function Playground({ onExecuted }: PlaygroundProps) {
                 <div style={{ marginTop: "4px", padding: "8px", background: "rgba(255,255,255,0.03)", borderRadius: "4px", borderLeft: "3px solid #38bdf8" }}>
                   <span style={{ color: "var(--text-muted)", display: "block", fontSize: "0.72rem" }}>POLICY ENFORCEMENT RATIONALE:</span>
                   <span style={{ color: "var(--text-main)", fontStyle: "italic", fontSize: "0.78rem" }}>
-                    "{t.policy_reason}"
+                    &ldquo;{t.policy_reason}&rdquo;
                   </span>
                 </div>
               </div>

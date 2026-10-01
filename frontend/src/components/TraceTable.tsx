@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { TelemetryTrace, RouteType } from "@/lib/types";
-import { ListFilter, ChevronDown, ChevronRight, Clock, DollarSign, CheckCircle2, ShieldAlert } from "lucide-react";
+import { TelemetryTrace } from "@/lib/types";
+import { ChevronDown, ChevronRight, Clock } from "lucide-react";
 
 interface TraceTableProps {
   traces: TelemetryTrace[];
@@ -155,7 +155,7 @@ export function TraceTable({ traces, selectedRoute, onFilterRoute, loading }: Tr
                             {trace.jev_latency_ms > 0 && (
                               <div
                                 style={{
-                                  width: `${(trace.jev_latency_ms / trace.total_latency_ms) * 100}%`,
+                                  width: `${Math.max(0, Math.min(100, (trace.jev_latency_ms / Math.max(0.1, trace.total_latency_ms)) * 100))}%`,
                                   background: "#3b82f6",
                                 }}
                                 title={`Jev: ${trace.jev_latency_ms}ms`}
@@ -164,7 +164,7 @@ export function TraceTable({ traces, selectedRoute, onFilterRoute, loading }: Tr
                             {trace.model_latency_ms > 0 && (
                               <div
                                 style={{
-                                  width: `${(trace.model_latency_ms / trace.total_latency_ms) * 100}%`,
+                                  width: `${Math.max(0, Math.min(100, (trace.model_latency_ms / Math.max(0.1, trace.total_latency_ms)) * 100))}%`,
                                   background: "#8b5cf6",
                                 }}
                                 title={`Model: ${trace.model_latency_ms}ms`}
@@ -172,7 +172,7 @@ export function TraceTable({ traces, selectedRoute, onFilterRoute, loading }: Tr
                             )}
                             <div
                               style={{
-                                width: `${(trace.gateway_overhead_ms / trace.total_latency_ms) * 100}%`,
+                                width: `${Math.max(0, Math.min(100, (trace.gateway_overhead_ms / Math.max(0.1, trace.total_latency_ms)) * 100))}%`,
                                 background: "#10b981",
                               }}
                               title={`Overhead: ${trace.gateway_overhead_ms}ms`}
@@ -262,7 +262,7 @@ export function TraceTable({ traces, selectedRoute, onFilterRoute, loading }: Tr
                               <div style={{ fontSize: "0.8rem" }}>
                                 <div style={{ marginBottom: "6px" }}>
                                   <span style={{ color: "var(--text-muted)" }}>Reason: </span>
-                                  <span style={{ fontStyle: "italic" }}>"{trace.policy_reason}"</span>
+                                  <span style={{ fontStyle: "italic" }}>&ldquo;{trace.policy_reason}&rdquo;</span>
                                 </div>
                                 <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "8px" }}>
                                   {trace.cache_hit && <span className="badge badge-cache">Cache Hit</span>}

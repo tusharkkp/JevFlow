@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { BenchmarkReport } from "@/lib/types";
 import { api } from "@/lib/api";
-import { BarChart3, Play, CheckCircle2, TrendingDown, Clock, ShieldCheck, Zap } from "lucide-react";
+import { BarChart3, Play } from "lucide-react";
 
 interface BenchmarkViewProps {
   initialReport?: BenchmarkReport | null;
@@ -22,8 +22,8 @@ export function BenchmarkView({ initialReport, onBenchmarkCompleted }: Benchmark
       const data = await api.runBenchmark("all");
       setReport(data);
       if (onBenchmarkCompleted) onBenchmarkCompleted();
-    } catch (err: any) {
-      setError(err.message || "Failed to execute comparative benchmark.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to execute comparative benchmark.");
     } finally {
       setRunning(false);
     }
@@ -175,7 +175,7 @@ export function BenchmarkView({ initialReport, onBenchmarkCompleted }: Benchmark
         </div>
       ) : (
         <div style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)", fontSize: "0.9rem" }}>
-          Click "Run A/B Benchmark" to execute the 12-archetype comparative evaluation suite.
+          Click &ldquo;Run A/B Benchmark&rdquo; to execute the 12-archetype comparative evaluation suite.
         </div>
       )}
 

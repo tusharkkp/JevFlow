@@ -27,11 +27,11 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "playground" | "traces" | "benchmarks">("overview");
 
-  // Pre-load benchmark data if available
-  const [initialBenchmark, setInitialBenchmark] = useState<BenchmarkReport | null>(null);
+  // Benchmark data state
+  const [initialBenchmark] = useState<BenchmarkReport | null>(null);
 
-  const fetchAllData = useCallback(async () => {
-    setRefreshing(true);
+  const fetchAllData = useCallback(async (isManual = false) => {
+    if (isManual) setRefreshing(true);
     try {
       const [h, c, r, s, t] = await Promise.allSettled([
         api.getHealth(),
@@ -47,19 +47,42 @@ export default function DashboardPage() {
       if (s.status === "fulfilled") setSummary(s.value);
       if (t.status === "fulfilled") setTraces(t.value);
     } finally {
-      setRefreshing(false);
+      if (isManual) setRefreshing(false);
     }
   }, [selectedRoute]);
 
-  // Initial load
+  // Initial load & when selectedRoute changes
   useEffect(() => {
-    fetchAllData();
-  }, [fetchAllData]);
+    let ignore = false;
+    async function load() {
+      try {
+        const [h, c, r, s, t] = await Promise.allSettled([
+          api.getHealth(),
+          api.getCacheStats(),
+          api.getRateLimitStats(),
+          api.getTelemetrySummary(),
+          api.listTraces(30, 0, selectedRoute),
+        ]);
+        if (ignore) return;
+        if (h.status === "fulfilled") setHealth(h.value);
+        if (c.status === "fulfilled") setCache(c.value);
+        if (r.status === "fulfilled") setRateLimit(r.value);
+        if (s.status === "fulfilled") setSummary(s.value);
+        if (t.status === "fulfilled") setTraces(t.value);
+      } catch {
+        // ignore
+      }
+    }
+    load();
+    return () => {
+      ignore = true;
+    };
+  }, [selectedRoute]);
 
   // Auto-refresh polling every 10 seconds
   useEffect(() => {
     const timer = setInterval(() => {
-      fetchAllData();
+      fetchAllData(false);
     }, 10000);
     return () => clearInterval(timer);
   }, [fetchAllData]);
@@ -73,7 +96,7 @@ export default function DashboardPage() {
         cache={cache}
         rateLimit={rateLimit}
         refreshing={refreshing}
-        onRefresh={fetchAllData}
+        onRefresh={() => fetchAllData(true)}
       />
 
       {/* KPI Overview Metrics Cards */}

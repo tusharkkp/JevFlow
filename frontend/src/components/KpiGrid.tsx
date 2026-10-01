@@ -2,22 +2,28 @@
 
 import React from "react";
 import { TelemetrySummary } from "@/lib/types";
-import { TrendingDown, Zap, Clock, ShieldAlert, Cpu } from "lucide-react";
+import { TrendingDown, Zap, Clock, Cpu } from "lucide-react";
 
 interface KpiGridProps {
   summary: TelemetrySummary | null;
 }
 
 export function KpiGrid({ summary }: KpiGridProps) {
+  const summaryAny = summary as (TelemetrySummary & { cost?: { total_cost_saved_usd?: number; cost_reduction_percent?: number }; latency?: { p50_ms?: number; p95_ms?: number; p99_ms?: number }; rates?: { cache_hit_rate?: number } }) | null;
   const totalReqs = summary?.total_requests || 0;
-  const costSaved = summary?.total_cost_saved_usd || 0;
-  const costReduction = summary?.cost_reduction_percent || 0;
-  const p50 = summary?.p50_latency_ms || 0;
-  const p95 = summary?.p95_latency_ms || 0;
-  const p99 = summary?.p99_latency_ms || 0;
-  const cacheHitRate = summary?.cache_hit_rate_percent || 0;
+  const costSaved = summary?.total_cost_saved_usd ?? summaryAny?.cost?.total_cost_saved_usd ?? 0;
+  const costReduction = summary?.cost_reduction_percent ?? summaryAny?.cost?.cost_reduction_percent ?? 0;
+  const p50 = summary?.p50_latency_ms ?? summaryAny?.latency?.p50_ms ?? 0;
+  const p95 = summary?.p95_latency_ms ?? summaryAny?.latency?.p95_ms ?? 0;
+  const p99 = summary?.p99_latency_ms ?? summaryAny?.latency?.p99_ms ?? 0;
+  const cacheHitRate = summary?.cache_hit_rate_percent ?? summaryAny?.rates?.cache_hit_rate ?? 0;
 
   const routeDist = summary?.route_distribution || {};
+  const parsedRoutes = Object.entries(routeDist).map(([r, data]) => {
+    const percentage = typeof data === "number" ? data : (data?.percentage ?? 0);
+    const count = typeof data === "number" ? null : (data?.count ?? null);
+    return { route: r, percentage, count };
+  });
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px", marginBottom: "24px" }}>
@@ -114,9 +120,9 @@ export function KpiGrid({ summary }: KpiGridProps) {
             Traffic Route Allocation
           </span>
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-            {Object.entries(routeDist).map(([r, data]) => (
-              <span key={r} className={`badge badge-${r}`}>
-                {r.replace("_", " ")}: {data.percentage}% ({data.count})
+            {parsedRoutes.map((r) => (
+              <span key={r.route} className={`badge badge-${r.route}`}>
+                {r.route.replace("_", " ")}: {r.percentage}% {r.count !== null ? `(${r.count})` : ""}
               </span>
             ))}
           </div>
@@ -131,21 +137,21 @@ export function KpiGrid({ summary }: KpiGridProps) {
           background: "rgba(0,0,0,0.5)",
           border: "1px solid var(--border-subtle)"
         }}>
-          {Object.entries(routeDist).map(([r, data]) => {
+          {parsedRoutes.map((r) => {
             let bg = "#3b82f6";
-            if (r === "deterministic") bg = "#10b981";
-            if (r === "cache") bg = "#06b6d4";
-            if (r === "small_model") bg = "#f59e0b";
-            if (r === "frontier_model") bg = "#a855f7";
-            if (r === "human_review") bg = "#f43f5e";
-            if (r === "fallback") bg = "#ef4444";
+            if (r.route === "deterministic") bg = "#10b981";
+            if (r.route === "cache") bg = "#06b6d4";
+            if (r.route === "small_model") bg = "#f59e0b";
+            if (r.route === "frontier_model") bg = "#a855f7";
+            if (r.route === "human_review") bg = "#f43f5e";
+            if (r.route === "fallback") bg = "#ef4444";
 
             return (
               <div
-                key={r}
-                title={`${r}: ${data.percentage}%`}
+                key={r.route}
+                title={`${r.route}: ${r.percentage}%`}
                 style={{
-                  width: `${data.percentage}%`,
+                  width: `${Math.max(0, Math.min(100, r.percentage))}%`,
                   backgroundColor: bg,
                   transition: "width 0.4s ease"
                 }}

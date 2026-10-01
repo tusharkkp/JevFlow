@@ -2,7 +2,7 @@
 
 import React from "react";
 import { GatewayHealth, CacheStats, RateLimitStats } from "@/lib/types";
-import { Activity, ShieldCheck, Database, RefreshCw, Zap } from "lucide-react";
+import { Activity, ShieldCheck, Database, RefreshCw } from "lucide-react";
 
 interface HeaderProps {
   health: GatewayHealth | null;
@@ -19,7 +19,10 @@ export function Header({
   refreshing,
   onRefresh,
 }: HeaderProps) {
-  const isHealthy = health?.status === "ok";
+  const isHealthy = health?.status === "healthy" || health?.status === "ok";
+  const cacheActive = cache ? (cache.active_entries ?? cache.size ?? 0) : 0;
+  const cacheMax = cache ? (cache.max_entries ?? cache.max_size ?? 5000) : 5000;
+  const rateLimitVal = rateLimit ? (rateLimit.refill_rate_per_sec ?? rateLimit.rate_limit_per_second ?? 1) : 1;
 
   return (
     <header className="glass-panel" style={{ padding: "16px 24px", marginBottom: "24px" }}>
@@ -39,6 +42,7 @@ export function Header({
             border: "1px solid rgba(255, 255, 255, 0.15)",
             background: "#07090e"
           }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/JevFlow.png" alt="JevFlow Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           </div>
           <div>
@@ -109,7 +113,7 @@ export function Header({
             <Database size={14} color="#a855f7" />
             <span style={{ color: "var(--text-muted)" }}>Cache:</span>
             <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "#c084fc" }}>
-              {cache ? `${cache.size} / ${cache.max_size} entries` : "Active"}
+              {cache ? `${cacheActive} / ${cacheMax} entries` : "Active"}
             </span>
           </div>
 
@@ -127,7 +131,7 @@ export function Header({
             <ShieldCheck size={14} color="#10b981" />
             <span style={{ color: "var(--text-muted)" }}>Rate Limiter:</span>
             <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "#34d399" }}>
-              {rateLimit ? `${rateLimit.rate_limit_per_second} req/s` : "10 req/s"}
+              {rateLimit ? `${rateLimitVal} req/s` : "10 req/s"}
             </span>
           </div>
 

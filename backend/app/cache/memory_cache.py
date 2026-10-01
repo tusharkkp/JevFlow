@@ -66,6 +66,8 @@ class MemoryCache(BaseCache):
                 "status": "healthy",
                 "active_entries": len(self._store),
                 "max_entries": self.max_entries,
+                "size": len(self._store),
+                "max_size": self.max_entries,
                 "hits": self.hits,
                 "misses": self.misses,
                 "hit_rate": round(self.hits / max(1, self.hits + self.misses), 3),

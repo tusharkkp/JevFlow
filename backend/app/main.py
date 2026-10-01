@@ -7,7 +7,9 @@ from backend.app.core.config import settings
 from backend.app.schemas.request import GatewayRequest
 from backend.app.schemas.response import GatewayResponse
 from backend.app.services.gateway_service import GatewayService
+from backend.app.decision.base import DecisionEngine
 from backend.app.decision.jev_engine import TypeSafeJevEngine
+from backend.app.decision.openrouter_jev_engine import OpenRouterJevEngine
 from backend.app.providers.registry import ProviderRegistry
 from backend.app.cache.memory_cache import MemoryCache
 from backend.app.cache.redis_cache import RedisCache
@@ -50,7 +52,15 @@ telemetry_repo = TelemetryRepository()
 
 
 def get_gateway_service() -> GatewayService:
-    decision_engine = TypeSafeJevEngine()
+    if settings.OPENROUTER_API_KEY:
+        decision_engine = OpenRouterJevEngine(
+            api_key=settings.OPENROUTER_API_KEY,
+            decisions_url=settings.OPENROUTER_DECISIONS_URL,
+            model=settings.JEV_DECISION_MODEL,
+        )
+    else:
+        decision_engine = TypeSafeJevEngine()
+
     return GatewayService(
         decision_engine=decision_engine,
         provider_registry=provider_registry,
@@ -73,7 +83,7 @@ async def enforce_rate_limit(client_id: str):
 async def root():
     return {
         "service": settings.APP_NAME,
-        "version": "0.7.0",
+        "version": "0.8.0",
         "status": "operational",
         "docs": "/docs",
     }
@@ -84,8 +94,16 @@ async def health():
     provider_health = await provider_registry.check_all_health()
     cache_health = await gateway_cache.health()
     rate_limiter_stats = await rate_limiter.get_stats()
+    decision_engine_name = (
+        f"OpenRouter JEV ({settings.JEV_DECISION_MODEL})"
+        if settings.OPENROUTER_API_KEY
+        else ("TypeSafe Jev" if settings.TYPESAFE_API_KEY else "TypeSafe Jev (Local Fallback)")
+    )
     return {
         "status": "healthy",
+        "app": settings.APP_NAME,
+        "version": "0.8.0",
+        "active_decision_engine": decision_engine_name,
         "environment": settings.ENVIRONMENT,
         "providers": {k: v.model_dump() for k, v in provider_health.items()},
         "cache": cache_health,

@@ -8,6 +8,7 @@ from backend.app.providers.small_model_provider import SmallModelProvider
 from backend.app.providers.frontier_model_provider import FrontierModelProvider
 from backend.app.providers.human_review_provider import HumanReviewProvider
 from backend.app.providers.openai_provider import OpenAICompatibleProvider
+from backend.app.providers.openrouter_jev_provider import OpenRouterJevProvider
 from backend.app.reliability.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
 from backend.app.reliability.retry import retry_with_backoff
 
@@ -28,32 +29,50 @@ class ProviderRegistry:
     ):
         self.deterministic = deterministic_provider or DeterministicProvider()
 
-        # Wire Real Provider if OPENAI_API_KEY is set, else use simulated provider
+        # Wire Real Provider if API key is set, else use simulated provider
+        effective_key = settings.OPENROUTER_API_KEY or settings.OPENAI_API_KEY
+
         if small_model_provider is not None:
             self.small_model = small_model_provider
-        elif settings.OPENAI_API_KEY:
-            logger.info("Initializing real Small Model Provider via %s (%s)", settings.OPENAI_BASE_URL, settings.SMALL_MODEL_NAME)
-            self.small_model = OpenAICompatibleProvider(
-                api_key=settings.OPENAI_API_KEY,
-                model_name=settings.SMALL_MODEL_NAME,
-                base_url=settings.OPENAI_BASE_URL,
-                input_cost_per_million=settings.SMALL_MODEL_INPUT_COST_PER_M,
-                output_cost_per_million=settings.SMALL_MODEL_OUTPUT_COST_PER_M,
-            )
+        elif effective_key:
+            if settings.SMALL_MODEL_NAME.startswith("typesafe/") or settings.SMALL_MODEL_NAME == "typesafe/jev-router":
+                logger.info("Initializing OpenRouter Jev Router for Small Model (%s)", settings.SMALL_MODEL_NAME)
+                self.small_model = OpenRouterJevProvider(
+                    api_key=effective_key,
+                    model_name=settings.SMALL_MODEL_NAME,
+                    base_url=settings.OPENROUTER_BASE_URL or settings.OPENAI_BASE_URL,
+                )
+            else:
+                logger.info("Initializing real Small Model Provider via %s (%s)", settings.OPENAI_BASE_URL, settings.SMALL_MODEL_NAME)
+                self.small_model = OpenAICompatibleProvider(
+                    api_key=effective_key,
+                    model_name=settings.SMALL_MODEL_NAME,
+                    base_url=settings.OPENAI_BASE_URL,
+                    input_cost_per_million=settings.SMALL_MODEL_INPUT_COST_PER_M,
+                    output_cost_per_million=settings.SMALL_MODEL_OUTPUT_COST_PER_M,
+                )
         else:
             self.small_model = SmallModelProvider()
 
         if frontier_model_provider is not None:
             self.frontier_model = frontier_model_provider
-        elif settings.OPENAI_API_KEY:
-            logger.info("Initializing real Frontier Model Provider via %s (%s)", settings.OPENAI_BASE_URL, settings.FRONTIER_MODEL_NAME)
-            self.frontier_model = OpenAICompatibleProvider(
-                api_key=settings.OPENAI_API_KEY,
-                model_name=settings.FRONTIER_MODEL_NAME,
-                base_url=settings.OPENAI_BASE_URL,
-                input_cost_per_million=settings.FRONTIER_MODEL_INPUT_COST_PER_M,
-                output_cost_per_million=settings.FRONTIER_MODEL_OUTPUT_COST_PER_M,
-            )
+        elif effective_key:
+            if settings.FRONTIER_MODEL_NAME.startswith("typesafe/") or settings.FRONTIER_MODEL_NAME == "typesafe/jev-router":
+                logger.info("Initializing OpenRouter Jev Router for Frontier Model (%s)", settings.FRONTIER_MODEL_NAME)
+                self.frontier_model = OpenRouterJevProvider(
+                    api_key=effective_key,
+                    model_name=settings.FRONTIER_MODEL_NAME,
+                    base_url=settings.OPENROUTER_BASE_URL or settings.OPENAI_BASE_URL,
+                )
+            else:
+                logger.info("Initializing real Frontier Model Provider via %s (%s)", settings.OPENAI_BASE_URL, settings.FRONTIER_MODEL_NAME)
+                self.frontier_model = OpenAICompatibleProvider(
+                    api_key=effective_key,
+                    model_name=settings.FRONTIER_MODEL_NAME,
+                    base_url=settings.OPENAI_BASE_URL,
+                    input_cost_per_million=settings.FRONTIER_MODEL_INPUT_COST_PER_M,
+                    output_cost_per_million=settings.FRONTIER_MODEL_OUTPUT_COST_PER_M,
+                )
         else:
             self.frontier_model = FrontierModelProvider()
 
